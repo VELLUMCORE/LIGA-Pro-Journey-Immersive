@@ -17,16 +17,20 @@ import claude from './claude';
 import sandbox from './sandbox';
 import scraper from './scraper';
 import stats from './stats';
+import squads from './squads';
 import { Command } from 'commander';
 
 /** @constant */
-const COMMAND_MAP: Record<string, typeof claude | typeof sandbox | typeof scraper | typeof stats> =
-  {
-    claude,
-    sandbox,
-    scraper,
-    stats,
-  };
+const COMMAND_MAP: Record<
+  string,
+  typeof claude | typeof sandbox | typeof scraper | typeof stats | typeof squads
+> = {
+  claude,
+  sandbox,
+  scraper,
+  stats,
+  squads,
+};
 
 /**
  * Initializes the CLI.
