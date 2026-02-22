@@ -49,9 +49,23 @@ export async function createCompetitions() {
   const today = profile?.date || new Date();
 
   // loop through autofill entries and create competitions
-  const autofill = Autofill.Items.filter(
-    (item) => item.on === Constants.CalendarEntry.SEASON_START,
-  );
+  const autofill = Autofill.Items
+    .filter((item) => item.on === Constants.CalendarEntry.SEASON_START)
+    .map((item, idx) => ({ item, idx }))
+    .sort((a, b) => {
+      const priority = {
+        [Constants.TierSlug.LEAGUE_PRO]: 0,
+        [Constants.TierSlug.LEAGUE_ADVANCED]: 1,
+        [Constants.TierSlug.LEAGUE_MAIN]: 2,
+        [Constants.TierSlug.LEAGUE_INTERMEDIATE]: 3,
+        [Constants.TierSlug.LEAGUE_OPEN]: 4,
+      } as Partial<Record<Constants.TierSlug, number>>;
+
+      const pa = priority[a.item.tierSlug as Constants.TierSlug] ?? 100;
+      const pb = priority[b.item.tierSlug as Constants.TierSlug] ?? 100;
+      return pa - pb || a.idx - b.idx;
+    })
+    .map(({ item }) => item);
   const tiers = await DatabaseClient.prisma.tier.findMany({
     where: {
       slug: {
@@ -3591,6 +3605,7 @@ export async function syncTiers() {
       },
       data: {
         tier: Constants.Prestige.findIndex((prestige) => prestige === competition.tier.slug),
+        prestige: Constants.Prestige.findIndex((prestige) => prestige === competition.tier.slug),
       },
     }),
   );

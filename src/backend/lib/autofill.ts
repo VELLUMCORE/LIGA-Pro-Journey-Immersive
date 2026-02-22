@@ -568,14 +568,16 @@ export const Items: Array<Item> = [
     tierSlug: Constants.TierSlug.LEAGUE_ADVANCED,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [
-      // EPL: bottom 16 drop back to advanced (by federation)
+      // EPL: federation-based relegation back to advanced
+      // NOTE: world-league entries are federation-filtered before range slicing,
+      // so these ranges must be relative to each federation's EPL cohort.
       {
         action: Action.INCLUDE,
         from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
         target: Constants.TierSlug.LEAGUE_PRO,
         federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 17,
-        end: 32,
+        start: 9,
+        end: 16,
         season: -1,
       },
       {
@@ -583,8 +585,8 @@ export const Items: Array<Item> = [
         from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
         target: Constants.TierSlug.LEAGUE_PRO,
         federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 17,
-        end: 32,
+        start: 5,
+        end: 8,
         season: -1,
       },
       {
@@ -592,8 +594,8 @@ export const Items: Array<Item> = [
         from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
         target: Constants.TierSlug.LEAGUE_PRO,
         federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 17,
-        end: 32,
+        start: 4,
+        end: 6,
         season: -1,
       },
       {
@@ -601,8 +603,8 @@ export const Items: Array<Item> = [
         from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
         target: Constants.TierSlug.LEAGUE_PRO,
         federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 17,
-        end: 32,
+        start: 2,
+        end: 2,
         season: -1,
       },
       // EU/NA: top 4 main playoffs promote to advanced
@@ -1844,7 +1846,50 @@ export async function parse(
     ),
   );
 
-  const excludedCompetitors = flatten(excludeList);
+  let excludedCompetitors = flatten(excludeList);
+
+  // Guardrail: a team can only be in one regular regional league division
+  // (open/intermediate/main/advanced) per season + federation.
+  const regularLeagueDivisionTiers = new Set([
+    Constants.TierSlug.LEAGUE_OPEN,
+    Constants.TierSlug.LEAGUE_INTERMEDIATE,
+    Constants.TierSlug.LEAGUE_MAIN,
+    Constants.TierSlug.LEAGUE_ADVANCED,
+  ]);
+
+  if (
+    item.on === Constants.CalendarEntry.SEASON_START &&
+    tier.league.slug === Constants.LeagueSlug.ESPORTS_LEAGUE &&
+    federation.slug !== Constants.FederationSlug.ESPORTS_WORLD &&
+    regularLeagueDivisionTiers.has(item.tierSlug)
+  ) {
+    const profile = await DatabaseClient.prisma.profile.findFirst();
+    const occupied = await DatabaseClient.prisma.competition.findMany({
+      where: {
+        season: profile.season,
+        federation: { slug: federation.slug },
+        tier: {
+          league: { slug: Constants.LeagueSlug.ESPORTS_LEAGUE },
+          slug: {
+            in: [...regularLeagueDivisionTiers],
+          },
+        },
+      },
+      include: {
+        competitors: {
+          include: {
+            team: true,
+          },
+        },
+      },
+    });
+
+    const occupiedTeams = flatten(
+      occupied.map((competition) => competition.competitors.map((competitor) => competitor.team)),
+    );
+
+    excludedCompetitors = [...excludedCompetitors, ...occupiedTeams];
+  }
 
   // create unique list of competitors by
   // filtering out the excludes
@@ -1862,17 +1907,28 @@ export async function parse(
         },
       },
       include: {
-        competitors: true,
+        competitors: {
+          include: {
+            team: true,
+          },
+        },
       },
     });
 
+    // Keep EPL teams out of regional league divisions across the full
+    // parse flow (initial includes + fallbacks + reserve backfill).
     if (eplCompetition) {
-      const eplTeamIds = new Set(eplCompetition.competitors.map((competitor) => competitor.teamId));
-      for (let idx = competitors.length - 1; idx >= 0; idx -= 1) {
-        if (eplTeamIds.has(competitors[idx].id)) {
-          competitors.splice(idx, 1);
-        }
-      }
+      excludedCompetitors = [
+        ...excludedCompetitors,
+        ...eplCompetition.competitors.map((competitor) => competitor.team),
+      ];
+      competitors.splice(
+        0,
+        competitors.length,
+        ...competitors.filter((team) =>
+          !eplCompetition.competitors.some((competitor) => competitor.teamId === team.id)
+        ),
+      );
     }
   }
 
@@ -1918,6 +1974,37 @@ export async function parse(
     competitors.push(
       ...differenceBy(fallbackList, [...competitors, ...excludedCompetitors], 'id'),
     );
+  }
+
+  // Last-resort anti-shrink backfill for regular league divisions.
+  // If configured sources/fallbacks are exhausted, fill remaining slots
+  // from any unassigned teams in the federation to preserve division size.
+  if (
+    item.on === Constants.CalendarEntry.SEASON_START &&
+    tier.league.slug === Constants.LeagueSlug.ESPORTS_LEAGUE &&
+    federation.slug !== Constants.FederationSlug.ESPORTS_WORLD &&
+    regularLeagueDivisionTiers.has(item.tierSlug) &&
+    competitors.length < tierSize
+  ) {
+    const reservePool = await DatabaseClient.prisma.team.findMany({
+      where: {
+        id: {
+          notIn: [...new Set([...competitors, ...excludedCompetitors].map((team) => team.id))],
+        },
+        country: {
+          continent: {
+            federation: {
+              slug: federation.slug,
+            },
+          },
+        },
+      },
+      orderBy: {
+        elo: 'desc',
+      },
+    });
+
+    competitors.push(...reservePool.slice(0, tierSize - competitors.length));
   }
 
   log.info(
