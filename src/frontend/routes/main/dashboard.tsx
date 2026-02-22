@@ -113,6 +113,10 @@ export default function () {
     () => state.profile?.player?.role === Constants.UserRole.IGL,
     [state.profile],
   );
+  const isBenched = React.useMemo(
+    () => state.profile?.player?.transferListed === true,
+    [state.profile],
+  );
   const [settings, setSettings] = React.useState(Constants.Settings);
   const [upcoming, setUpcoming] = React.useState<
     Awaited<ReturnType<typeof api.matches.upcoming<typeof Eagers.match>>>
@@ -435,8 +439,21 @@ export default function () {
               <button
                 title={t('main.dashboard.advanceCalendar')}
                 className="day day-btn border-t-0"
-                disabled={!state.profile || state.working || isMatchday}
-                onClick={() => !state.working && !isMatchday && dispatch(calendarAdvance())}
+                disabled={!state.profile || state.working || (isMatchday && !isBenched)}
+                onClick={() => {
+                  if (state.working || !state.profile) {
+                    return;
+                  }
+
+                  if (isMatchday && isBenched) {
+                    api.calendar.sim().then(() => dispatch(calendarAdvance(1)));
+                    return;
+                  }
+
+                  if (!isMatchday) {
+                    dispatch(calendarAdvance());
+                  }
+                }}
               >
                 <figure>
                   <FaForward />
@@ -538,7 +555,7 @@ export default function () {
 
             // the suffix is either the current position
             // or their league tier if it's a cup
-            const disabled = state.working || !isMatchday;
+            const disabled = state.working || !isMatchday || isBenched;
             const [home, away] = spotlight.competitors;
             const [homeHistorial, awayHistorial] = matchHistorial;
             const [homeWorldRanking, awayWorldRanking] = worldRankings;
