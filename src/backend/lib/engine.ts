@@ -185,11 +185,16 @@ export class Runtime {
       // the data object on every tick
       await onTickStart.callback();
 
-      // the `generic` and `onTick` middleware
-      const results = [
-        ...(await Promise.all(this.input.map(this.runGenericMiddleware.bind(this)))),
-        ...(await Promise.all(this.middleware.onTick.map((m) => m.callback(this.input)))),
-      ];
+      // run generic middleware sequentially to keep calendar side-effects deterministic
+      // (multiple same-day competition starts can otherwise race each other).
+      const genericResults = [] as unknown[];
+      for (const item of this.input) {
+        genericResults.push(await this.runGenericMiddleware(item));
+      }
+
+      // run tick middleware after generic handlers complete
+      const tickResults = await Promise.all(this.middleware.onTick.map((m) => m.callback(this.input)));
+      const results = [...genericResults, ...tickResults];
 
       // check if any middleware returned falsy
       const terminate = !ignoreTermSignal && flatten(results).findIndex((r) => r === false) > -1;

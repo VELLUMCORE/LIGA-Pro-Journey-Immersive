@@ -3,7 +3,7 @@
  */
 
 import { dialog, ipcMain } from "electron";
-import { add, addDays, differenceInDays, format } from "date-fns";
+import { add, addDays, differenceInDays, endOfDay, format, startOfDay } from "date-fns";
 import { Prisma, Calendar } from "@prisma/client";
 import { DatabaseClient, Engine, WindowManager, Worldgen } from "@liga/backend/lib";
 import { Bot, Eagers, Constants, Util } from "@liga/shared";
@@ -24,27 +24,107 @@ async function disableClose(event: Electron.Event) {
 }
 
 /**
+ * Recreate missing due competition-start entries.
+ *
+ * This is a safety net for cases where a competition remains SCHEDULED
+ * past its due start date but has no pending COMPETITION_START entry.
+ */
+async function reconcileDueCompetitionStarts(profile: NonNullable<Awaited<ReturnType<typeof DatabaseClient.prisma.profile.findFirst>>>) {
+  const seasonStart = await DatabaseClient.prisma.calendar.findFirst({
+    where: {
+      type: Constants.CalendarEntry.SEASON_START,
+      date: { lte: profile.date.toISOString() },
+    },
+    orderBy: { date: 'desc' },
+  });
+
+  if (!seasonStart) {
+    return;
+  }
+
+  const competitions = await DatabaseClient.prisma.competition.findMany({
+    where: {
+      season: profile.season,
+      status: Constants.CompetitionStatus.SCHEDULED,
+      tier: {
+        triggerOffsetDays: null,
+      },
+    },
+    include: {
+      tier: {
+        include: {
+          league: true,
+        },
+      },
+      federation: true,
+    },
+  });
+
+  for (const competition of competitions) {
+    const dueDate = addDays(seasonStart.date, competition.tier.league.startOffsetDays);
+    if (profile.date < dueDate) {
+      continue;
+    }
+
+    const pendingStart = await DatabaseClient.prisma.calendar.findFirst({
+      where: {
+        type: Constants.CalendarEntry.COMPETITION_START,
+        payload: competition.id.toString(),
+        completed: false,
+      },
+      select: { id: true },
+    });
+
+    if (pendingStart) {
+      continue;
+    }
+
+    await DatabaseClient.prisma.calendar.create({
+      data: {
+        type: Constants.CalendarEntry.COMPETITION_START,
+        date: profile.date.toISOString(),
+        payload: competition.id.toString(),
+      },
+    });
+  }
+}
+
+/**
  * Engine middleware: start of each tick.
  */
 async function onTickStart() {
+
   Engine.Runtime.Instance.log.info(
     "Running %s middleware...",
     Engine.MiddlewareType.TICK_START.toUpperCase()
   );
 
   const profile = await DatabaseClient.prisma.profile.findFirst();
+  if (!profile) return Promise.resolve();
 
-  // Fetch global calendar events for today. These run even if the user has no team.
+  await reconcileDueCompetitionStarts(profile);
+
+  // Fetch global calendar events for today (calendar-day window, not exact timestamp).
+  // This avoids missing entries due to timezone/DST/millisecond drift.
+  const from = startOfDay(profile.date);
+  const to = endOfDay(profile.date);
   Engine.Runtime.Instance.input = await DatabaseClient.prisma.calendar.findMany({
-    where: { date: profile.date.toISOString(), completed: false },
+    where: {
+      date: {
+        gte: from.toISOString(),
+        lte: to.toISOString(),
+      },
+      completed: false,
+    },
+    orderBy: [{ date: 'asc' }, { id: 'asc' }],
   });
 
   Engine.Runtime.Instance.log.info(
     "Today's date is: %s",
     format(profile.date, Constants.Settings.calendar.calendarDateFormat)
   );
-
   Engine.Runtime.Instance.log.info("%d items to run.", Engine.Runtime.Instance.input.length);
+
   return Promise.resolve();
 }
 
