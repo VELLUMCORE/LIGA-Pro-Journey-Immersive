@@ -215,6 +215,7 @@ model MapPool {
   gameMapId           Int
   gameVersion         GameVersion         @relation(fields: [gameVersionId], references: [id])
   gameVersionId       Int
+  @@unique([gameMapId, gameVersionId])
 }
 
 model Match {
