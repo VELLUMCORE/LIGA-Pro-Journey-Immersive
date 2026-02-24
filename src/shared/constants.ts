@@ -1252,6 +1252,9 @@ export const TransferSettings = {
   // chance an NPC team signs a free agent instead of trading with another team
   PBX_NPC_FREE_AGENT_SIGN: 20,
 
+  // when no suitable same-country free agent is found, chance to sign from same federation
+  PBX_NPC_FREE_AGENT_SAME_FED: 40,
+
   // preference boost for same-country offers
   PBX_NPC_SAME_COUNTRY_BOOST: 65,
 

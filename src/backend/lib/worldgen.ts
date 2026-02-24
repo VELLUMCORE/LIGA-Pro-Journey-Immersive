@@ -3790,7 +3790,7 @@ async function trySignNPCFreeAgent(params: {
     return Promise.resolve(false);
   }
 
-  const candidates = freeAgents.filter((player) => {
+  const roleCandidates = freeAgents.filter((player) => {
     const role = normalizeRole(player.role);
     const sameRole = (from.players || []).filter((p) => normalizeRole(p.role) === role);
 
@@ -3801,6 +3801,24 @@ async function trySignNPCFreeAgent(params: {
     const weakestRoleXp = Math.min(...sameRole.map((p) => p.xp || 0), Number.MAX_SAFE_INTEGER);
     return (player.xp || 0) > weakestRoleXp || sameRole.length === 0;
   });
+
+  if (!roleCandidates.length) {
+    return Promise.resolve(false);
+  }
+
+  const sameCountryCandidates = roleCandidates.filter((player) => player.countryId === from.countryId);
+  let candidates = sameCountryCandidates;
+
+  if (!candidates.length) {
+    const fromFedId = from.country?.continent?.federationId;
+    const sameFederationCandidates = roleCandidates.filter(
+      (player) => player.country?.continent?.federationId === fromFedId,
+    );
+
+    if (sameFederationCandidates.length && Chance.rollD2(Constants.TransferSettings.PBX_NPC_FREE_AGENT_SAME_FED)) {
+      candidates = sameFederationCandidates;
+    }
+  }
 
   if (!candidates.length) {
     return Promise.resolve(false);
@@ -3835,6 +3853,23 @@ async function trySignNPCFreeAgent(params: {
       starter: true,
       transferListed: false,
       contractEnd,
+    },
+  });
+
+  await DatabaseClient.prisma.transfer.create({
+    data: {
+      status: Constants.TransferStatus.TEAM_ACCEPTED,
+      from: { connect: { id: from.id } },
+      to: { connect: { id: from.id } },
+      target: { connect: { id: target.id } },
+      offers: {
+        create: [{
+          status: Constants.TransferStatus.TEAM_ACCEPTED,
+          cost: 0,
+          wages: target.wages || 0,
+          contractYears: years,
+        }],
+      },
     },
   });
 

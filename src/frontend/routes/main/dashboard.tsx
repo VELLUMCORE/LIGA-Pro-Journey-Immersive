@@ -166,9 +166,6 @@ export default function () {
           status: {
             in: [Constants.TransferStatus.PLAYER_ACCEPTED, Constants.TransferStatus.TEAM_ACCEPTED],
           },
-          to: {
-            isNot: null,
-          },
         },
         orderBy: {
           id: 'desc',
@@ -778,34 +775,59 @@ export default function () {
             </header>
             <table className="table table-fixed">
               <tbody>
-                {transfers.slice(0, NUM_PREVIOUS).map((transfer) => (
-                  <tr key={`${transfer.id}__transfer_recent`}>
-                    <td className="p-0 text-center">
-                      <img
-                        title={transfer.target.name}
-                        className="mr-2 inline-block size-12"
-                        src={transfer.target.avatar || 'resources://avatars/empty.png'}
-                      />
-                      <Link to={`/teams?teamId=${transfer.to?.id || ''}`}>
+                {transfers.slice(0, NUM_PREVIOUS).map((transfer) => {
+                  const latestOffer = transfer.offers[0];
+                  const isFreeAgentTransfer =
+                    transfer.status === Constants.TransferStatus.TEAM_ACCEPTED &&
+                    (latestOffer?.cost || 0) === 0;
+
+                  return (
+                    <tr key={`${transfer.id}__transfer_recent`}>
+                      <td className="p-0 text-center">
                         <img
-                          title={transfer.to?.name || '-'}
-                          className="inline-block size-12"
-                          src={transfer.to?.blazon || 'resources://blazonry/009400.png'}
+                          title={transfer.target.name}
+                          className="mr-2 inline-block size-12"
+                          src={transfer.target.avatar || 'resources://avatars/empty.png'}
                         />
-                      </Link>
-                    </td>
-                    <td className="text-center">&rarr;</td>
-                    <td className="p-0 text-center">
-                      <Link to={`/teams?teamId=${transfer.from.id}`}>
-                        <img
-                          title={transfer.from.name}
-                          className="inline-block size-12"
-                          src={transfer.from.blazon}
-                        />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                        {isFreeAgentTransfer ? (
+                          <img
+                            title="No Team"
+                            className="inline-block size-12"
+                            src="resources://blazonry/noteam.svg"
+                          />
+                        ) : (
+                          <Link to={`/teams?teamId=${transfer.to?.id || ''}`}>
+                            <img
+                              title={transfer.to?.name || '-'}
+                              className="inline-block size-12"
+                              src={transfer.to?.blazon || 'resources://blazonry/009400.png'}
+                            />
+                          </Link>
+                        )}
+                      </td>
+                      <td className="text-center">&rarr;</td>
+                      <td className="p-0 text-center">
+                        {isFreeAgentTransfer ? (
+                          <Link to={`/teams?teamId=${transfer.to?.id || ''}`}>
+                            <img
+                              title={transfer.to?.name || '-'}
+                              className="inline-block size-12"
+                              src={transfer.to?.blazon || 'resources://blazonry/009400.png'}
+                            />
+                          </Link>
+                        ) : (
+                          <Link to={`/teams?teamId=${transfer.from.id}`}>
+                            <img
+                              title={transfer.from.name}
+                              className="inline-block size-12"
+                              src={transfer.from.blazon}
+                            />
+                          </Link>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {[...Array(Math.max(0, NUM_PREVIOUS - transfers.length))].map((_, idx) => (
                   <tr key={`${idx}__filler_transfer_recent`} className="text-muted">
                     <td className="text-center">-</td>
