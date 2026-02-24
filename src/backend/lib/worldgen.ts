@@ -4601,6 +4601,16 @@ export async function syncWages() {
 }
 
 async function incrementAgesSeasonal() {
+  const profile = await DatabaseClient.prisma.profile.findFirst();
+
+  if (!profile || profile.season <= 1) {
+    Engine.Runtime.Instance.log.info(
+      'Season start: skipping age increment for first season (season=%d).',
+      profile?.season ?? 0,
+    );
+    return;
+  }
+
   const res = await DatabaseClient.prisma.player.updateMany({
     where: { age: { not: null } },
     data: { age: { increment: 1 } },
