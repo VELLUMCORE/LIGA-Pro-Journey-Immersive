@@ -144,6 +144,9 @@ async function onTickEnd(input: Calendar[], status?: Engine.LoopStatus) {
 
   await Worldgen.recordMatchResults();
 
+  // npc transfers
+  await Worldgen.sendNPCTransferOffer();
+
   // If stopped, do not advance day
   if (status === Engine.LoopStatus.TERMINATED) {
     Engine.Runtime.Instance.log.info("Stopping...");
@@ -237,6 +240,10 @@ export default function () {
   Engine.Runtime.Instance.register(
     Constants.CalendarEntry.TRANSFER_OFFER_EXPIRY_CHECK,
     Worldgen.onTransferOfferExpiryCheck
+  );
+  Engine.Runtime.Instance.register(
+    Constants.CalendarEntry.TRANSFER_PARSE,
+    Worldgen.onTransferParse
   );
 
   // IPC: create calendar entry.

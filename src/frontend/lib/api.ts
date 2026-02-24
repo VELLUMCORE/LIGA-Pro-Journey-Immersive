@@ -319,6 +319,10 @@ export default {
   team: {
     worldRanking: (id: number) =>
       ipcRenderer.invoke(Constants.IPCRoute.TEAM_RANKING, id) as Promise<number>,
+    transfers: <T = typeof Eagers.transfer>(id: number) =>
+      ipcRenderer.invoke(Constants.IPCRoute.TEAM_TRANSFERS, id) as Promise<
+        Array<Prisma.TransferGetPayload<T>>
+      >,
   },
   teams: {
     all: <T = unknown>(query?: Prisma.TeamFindManyArgs) =>

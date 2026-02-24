@@ -807,6 +807,7 @@ async function promoteReplacement(params: {
     data: {
       starter: true,
       transferListed: false,
+      lastOfferAt: null,
     },
   });
 
@@ -3569,6 +3570,697 @@ export async function sendUserFaceitOffer() {
 
   return Promise.resolve(transfer);
 }
+
+
+function getTierContractYears(tierIdx: number | null | undefined) {
+  const tierSlug = getTeamTierSlug(tierIdx);
+  if (!tierSlug) return 1;
+  return rollContractYears(tierSlug);
+}
+
+function countStarterSnipers(players: Array<{ starter?: boolean; role?: string | null }>) {
+  return players.filter((p) => p.starter && normalizeRole(p.role) === "SNIPER").length;
+}
+function countSnipers(players: Array<{ role?: string | null }>) {
+  return players.filter((p) => normalizeRole(p.role) === "SNIPER").length;
+}
+
+function ensureTeamFloorAndSniper(params: {
+  players: Array<{ role?: string | null }>;
+  minPlayers?: number;
+}) {
+  const { players, minPlayers = Constants.Application.SQUAD_MIN_LENGTH } = params;
+  return players.length >= minPlayers && countSnipers(players) >= 1;
+}
+
+function selectBenchVictim(params: {
+  teamPlayers: Array<{ id: number; role?: string | null; starter?: boolean; xp?: number | null }>;
+  incomingPlayerId: number;
+  incomingRole: string;
+  incomingXp: number;
+}) {
+  const { teamPlayers, incomingPlayerId, incomingRole, incomingXp } = params;
+
+  let candidates = teamPlayers.filter(
+    (p) => p.starter && p.id !== incomingPlayerId && normalizeRole(p.role) === incomingRole,
+  );
+
+  // Hard rule for riflers: rifler must replace rifler.
+  if (!candidates.length && incomingRole === "RIFLER") {
+    return null;
+  }
+
+  if (!candidates.length) {
+    candidates = teamPlayers.filter((p) => p.starter && p.id !== incomingPlayerId);
+  }
+
+  const lowerXp = candidates
+    .filter((p) => (p.xp ?? 0) < incomingXp)
+    .sort((a, b) => (a.xp ?? 0) - (b.xp ?? 0));
+
+  return lowerXp[0] ?? null;
+}
+
+async function reinstateBenchedPlayerAfterSale(params: {
+  teamId: number;
+  soldRole: string;
+}) {
+  const { teamId, soldRole } = params;
+
+  const team = await DatabaseClient.prisma.team.findFirst({
+    where: { id: teamId },
+    include: { players: true },
+  });
+
+  if (!team) return Promise.resolve();
+
+  const soldNorm = normalizeRole(soldRole);
+
+  const starterCount = (team.players || []).filter((p) => p.starter).length;
+  if (starterCount >= Constants.Application.SQUAD_MIN_LENGTH) {
+    return Promise.resolve();
+  }
+
+  let candidates = (team.players || [])
+    .filter((p) => !p.starter && p.transferListed)
+    .filter((p) => normalizeRole(p.role) === soldNorm)
+    .sort((a, b) => (b.xp || 0) - (a.xp || 0));
+
+  if (!candidates.length) {
+    candidates = (team.players || [])
+      .filter((p) => !p.starter && p.transferListed)
+      .sort((a, b) => (b.xp || 0) - (a.xp || 0));
+  }
+
+  const promoted = candidates[0];
+  if (!promoted) return Promise.resolve();
+
+  await DatabaseClient.prisma.player.update({
+    where: { id: promoted.id },
+    data: {
+      starter: true,
+      transferListed: false,
+      lastOfferAt: null,
+    },
+  });
+
+  return Promise.resolve();
+}
+
+
+async function getCareerPeakTier(playerId: number) {
+  const peak = await DatabaseClient.prisma.careerStint.findFirst({
+    where: { playerId, tier: { not: null } },
+    orderBy: { tier: 'desc' },
+    select: { tier: true },
+  });
+
+  return typeof peak?.tier === 'number' ? peak.tier : null;
+}
+
+function getExpiryBoost(contractEnd: Date | null | undefined, now: Date) {
+  if (!contractEnd) return 0;
+
+  const daysLeft = Math.max(0, differenceInDays(contractEnd, now));
+  const minDays = Constants.TransferSettings.PBX_NPC_EXPIRY_WINDOW_MIN_DAYS;
+  const maxDays = Constants.TransferSettings.PBX_NPC_EXPIRY_WINDOW_MAX_DAYS;
+
+  if (daysLeft < minDays || daysLeft > maxDays) return 0;
+  return 20;
+}
+
+function getListedDays(player: { transferListed?: boolean; lastOfferAt?: Date | null }, now: Date) {
+  if (!player.transferListed || !player.lastOfferAt) return 0;
+  return Math.max(0, differenceInDays(now, player.lastOfferAt));
+}
+
+async function processNPCContractExtensions() {
+  const profile = await DatabaseClient.prisma.profile.findFirst();
+  if (!profile) return Promise.resolve();
+
+  const now = profile.date;
+  const horizon = addDays(now, Constants.PlayerContractSettings.EXTENSION_EVAL_DAYS_BEFORE_END ?? 30);
+
+  const expiring = await DatabaseClient.prisma.player.findMany({
+    where: {
+      teamId: { not: null },
+      contractEnd: { gt: now, lte: horizon },
+      userControlled: false,
+    },
+    include: {
+      team: true,
+    },
+    take: 20,
+  });
+
+  if (!expiring.length) return Promise.resolve();
+
+  for (const player of shuffle(expiring).slice(0, 5)) {
+    if (!player.teamId || !player.team || player.transferListed) continue;
+
+    const tierTeams = await DatabaseClient.prisma.team.findMany({
+      where: { tier: player.team.tier, profile: null },
+      select: { elo: true },
+      take: 100,
+    });
+    const avgElo = tierTeams.length
+      ? tierTeams.reduce((sum, t) => sum + (t.elo || 0), 0) / tierTeams.length
+      : (player.team.elo || 0);
+
+    let teamOfferPbx = (player.team.elo || 0) >= avgElo ? 70 : 45;
+    const daysLeft = differenceInDays(player.contractEnd!, now);
+    if (daysLeft <= 14) teamOfferPbx += 10;
+
+    if (!Chance.rollD2(Math.max(5, Math.min(95, Math.round(teamOfferPbx))))) {
+      continue;
+    }
+
+    const peakTier = await getCareerPeakTier(player.id);
+    let playerAcceptPbx = 65;
+    if (typeof peakTier === 'number' && peakTier < player.team.tier) {
+      playerAcceptPbx -= 20;
+    }
+
+    if (!Chance.rollD2(Math.max(5, Math.min(95, Math.round(playerAcceptPbx))))) {
+      await DatabaseClient.prisma.player.update({
+        where: { id: player.id },
+        data: { transferListed: true, lastOfferAt: now },
+      });
+      continue;
+    }
+
+    const years = getTierContractYears(player.team.tier);
+    const baseDate = player.contractEnd && player.contractEnd > now ? player.contractEnd : now;
+    await DatabaseClient.prisma.player.update({
+      where: { id: player.id },
+      data: { contractEnd: addYears(baseDate, years), transferListed: false },
+    });
+  }
+
+  return Promise.resolve();
+}
+
+async function trySignNPCFreeAgent(params: {
+  from: Prisma.TeamGetPayload<typeof Eagers.team>;
+  date: Date;
+}) {
+  const { from, date } = params;
+
+  if (!Chance.rollD2(Constants.TransferSettings.PBX_NPC_FREE_AGENT_SIGN)) {
+    return Promise.resolve(false);
+  }
+
+  // keep at least one awper/sniper in team and respect role upgrade logic
+  const freeAgents = await DatabaseClient.prisma.player.findMany({
+    where: {
+      teamId: null,
+      userControlled: false,
+    },
+    include: {
+      country: {
+        include: {
+          continent: true,
+        },
+      },
+    },
+    take: 200,
+  });
+
+  if (!freeAgents.length) {
+    return Promise.resolve(false);
+  }
+
+  const candidates = freeAgents.filter((player) => {
+    const role = normalizeRole(player.role);
+    const sameRole = (from.players || []).filter((p) => normalizeRole(p.role) === role);
+
+    if (role === "RIFLER" && !sameRole.length) {
+      return false;
+    }
+
+    const weakestRoleXp = Math.min(...sameRole.map((p) => p.xp || 0), Number.MAX_SAFE_INTEGER);
+    return (player.xp || 0) > weakestRoleXp || sameRole.length === 0;
+  });
+
+  if (!candidates.length) {
+    return Promise.resolve(false);
+  }
+
+  const target = sample(candidates);
+  if (!target) return Promise.resolve(false);
+
+  const victim = selectBenchVictim({
+    teamPlayers: from.players as any,
+    incomingPlayerId: target.id,
+    incomingRole: normalizeRole(target.role),
+    incomingXp: target.xp || 0,
+  });
+
+  if (!victim) {
+    return Promise.resolve(false);
+  }
+
+  await DatabaseClient.prisma.player.update({
+    where: { id: victim.id },
+    data: { starter: false, transferListed: true, lastOfferAt: date },
+  });
+
+  const years = getTierContractYears(from.tier);
+  const contractEnd = addYears(date, years);
+
+  await DatabaseClient.prisma.player.update({
+    where: { id: target.id },
+    data: {
+      team: { connect: { id: from.id } },
+      starter: true,
+      transferListed: false,
+      contractEnd,
+    },
+  });
+
+  await closeOpenCareerStints(DatabaseClient.prisma, target.id, date);
+  await startCareerStint(DatabaseClient.prisma, {
+    playerId: target.id,
+    teamId: from.id,
+    tier: from.tier,
+    startedAt: date,
+  });
+
+  Engine.Runtime.Instance.log.info(
+    '%s signed free agent %s (years=%d)',
+    from.name,
+    target.name,
+    years,
+  );
+
+  return Promise.resolve(true);
+}
+
+export async function sendNPCTransferOffer() {
+  await processNPCContractExtensions();
+
+  if (!Chance.rollD2(Constants.TransferSettings.PBX_NPC_CONSIDER)) {
+    return Promise.resolve();
+  }
+
+  const profile = await DatabaseClient.prisma.profile.findFirst();
+  const now = profile?.date || new Date();
+
+  const tierSlug = Chance.pluck(Constants.Prestige, Constants.TransferSettings.PBX_NPC_TIER);
+  const tierIdx = Constants.Prestige.findIndex((p) => p === tierSlug);
+
+  const buyers = await DatabaseClient.prisma.team.findMany({
+    where: {
+      tier: tierIdx,
+      OR: [
+        { profile: null },
+        ...(profile?.teamId ? [{ id: profile.teamId }] : []),
+      ],
+    },
+    include: Eagers.team.include,
+  });
+
+  if (!buyers.length) return Promise.resolve();
+
+  const from = sample(buyers);
+  if (!from) return Promise.resolve();
+
+  if (await trySignNPCFreeAgent({ from, date: now })) {
+    return Promise.resolve();
+  }
+
+  const sellersPool = await DatabaseClient.prisma.team.findMany({
+    where: {
+      id: { not: from.id },
+      tier: { lte: from.tier },
+      OR: [
+        { profile: null },
+        ...(profile?.teamId ? [{ id: profile.teamId }] : []),
+      ],
+    },
+    include: Eagers.team.include,
+  });
+
+  const sellers = sellersPool.filter(
+    (team) => team.players.length > Constants.Application.SQUAD_MIN_LENGTH,
+  );
+
+  if (!sellers.length) return Promise.resolve();
+
+  const rankedSellers = sellers
+    .map((team) => {
+      const topXp = Math.max(...(team.players || []).map((p) => p.xp || 0), 0);
+      let score = 0;
+
+      if (team.countryId === from.countryId) score += 40;
+
+      // lower-division same-country high-XP talent bias
+      if (team.tier < from.tier) {
+        score += 20;
+        score += Math.round(topXp / 500);
+      }
+
+      // keep top-tier market healthy by preferring near-tier sellers
+      const tierGap = Math.abs((from.tier || 0) - (team.tier || 0));
+      score -= tierGap * 12;
+
+      return { team, score };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const topSlice = rankedSellers.slice(0, Math.max(1, Math.min(8, rankedSellers.length)));
+  const to = sample(topSlice.map((x) => x.team));
+  if (!to) return Promise.resolve();
+
+  const created = await sendTransferOffer(from, to);
+  if (created) return Promise.resolve(created);
+
+  // fallback: if ranked pick failed (often due XP fit), try same-tier sellers
+  const sameTierSellers = sellers.filter((team) => team.tier === from.tier && team.id !== to.id);
+  if (!sameTierSellers.length) return Promise.resolve();
+
+  const fallbackTo = sample(sameTierSellers);
+  if (!fallbackTo) return Promise.resolve();
+
+  return sendTransferOffer(from, fallbackTo);
+}
+
+export async function sendTransferOffer(
+  from: Prisma.TeamGetPayload<typeof Eagers.team>,
+  to: Prisma.TeamGetPayload<typeof Eagers.team>,
+) {
+  if (!from || !to || from.id === to.id) {
+    return Promise.resolve();
+  }
+
+  const profile = await DatabaseClient.prisma.profile.findFirst(Eagers.profile);
+  if (!profile) return Promise.resolve();
+
+  if (to.players.length <= Constants.Application.SQUAD_MIN_LENGTH) return Promise.resolve();
+
+  const candidates = (to.players || [])
+    .filter((player) => player.id !== profile.playerId)
+    .filter((player) => {
+      const role = normalizeRole(player.role);
+
+      // selling team must keep at least one sniper after sale
+      if (role === "SNIPER") {
+        return countSnipers(to.players as any) > 1;
+      }
+
+      return true;
+    })
+    .filter((player) => {
+      const role = normalizeRole(player.role);
+      const sameRoleFrom = (from.players || []).filter((p) => normalizeRole(p.role) === role);
+
+      // rifler always replaces rifler
+      if (role === "RIFLER" && !sameRoleFrom.length) {
+        return false;
+      }
+
+      const weakestRoleXp = Math.min(...sameRoleFrom.map((p) => p.xp || 0), Number.MAX_SAFE_INTEGER);
+      return (player.xp || 0) > weakestRoleXp || sameRoleFrom.length === 0;
+    })
+    .filter((player) => {
+      // destination must keep at least 5 players and at least one sniper after benching/replacement
+      const role = normalizeRole(player.role);
+      const victim = selectBenchVictim({
+        teamPlayers: from.players as any,
+        incomingPlayerId: player.id,
+        incomingRole: role,
+        incomingXp: player.xp || 0,
+      });
+
+      if (!victim) {
+        return false;
+      }
+
+      return ensureTeamFloorAndSniper({ players: from.players as any });
+    });
+
+  if (!candidates.length) return Promise.resolve();
+
+  const scored = await Promise.all(
+    candidates.map(async (player) => {
+      let score = player.transferListed ? 85 : 0;
+      score += getExpiryBoost(player.contractEnd as any, profile.date);
+
+      const listedDays = getListedDays(player as any, profile.date);
+      if (player.transferListed) {
+        score += 20;
+      }
+      if (listedDays >= 90) {
+        score += 25;
+      }
+
+      const peakTier = await getCareerPeakTier(player.id);
+      if (typeof peakTier === 'number' && peakTier < from.tier) {
+        score += 20;
+      }
+
+      if (player.countryId === from.countryId) {
+        score += Constants.TransferSettings.PBX_NPC_SAME_COUNTRY_BOOST;
+
+        // allow picking strong same-country players from lower divisions
+        if (to.tier < from.tier && (player.xp || 0) >= 70) {
+          score += 30;
+        }
+      }
+
+      if ((to.elo || 0) > (from.elo || 0)) {
+        score -= Constants.TransferSettings.PBX_NPC_SELLING_TEAM_PERFORMANCE_DAMPENER;
+      }
+
+      return { player, score };
+    }),
+  );
+
+  scored.sort((a, b) => b.score - a.score || (b.player.xp || 0) - (a.player.xp || 0));
+  const target = scored[0]?.player;
+  if (!target) return Promise.resolve();
+
+  const fromFed = from.country?.continent?.federationId;
+  const toFed = to.country?.continent?.federationId;
+  const sameFed = fromFed && toFed ? fromFed === toFed : true;
+
+  const peakTier = await getCareerPeakTier(target.id);
+  const topProfile = typeof peakTier === 'number' && peakTier >= Constants.Prestige.findIndex((p) => p === TierSlug.LEAGUE_ADVANCED);
+  if (!sameFed && !(topProfile && Chance.rollD2(Constants.TransferSettings.PBX_NPC_CROSS_FED_TOP))) {
+    return Promise.resolve();
+  }
+
+  const offerPercent = random(95, 115) / 100;
+  const cost = Math.max(0, Math.round((target.cost || 0) * offerPercent));
+  const wages = Math.max(0, Math.round((target.wages || 0) * random(95, 120) / 100));
+  const contractYears = getTierContractYears(from.tier);
+
+  const transfer = await DatabaseClient.prisma.transfer.create({
+    data: {
+      status: Constants.TransferStatus.TEAM_PENDING,
+      from: { connect: { id: from.id } },
+      to: { connect: { id: to.id } },
+      target: { connect: { id: target.id } },
+      offers: {
+        create: [{
+          status: Constants.TransferStatus.TEAM_PENDING,
+          cost,
+          wages,
+          contractYears,
+        }],
+      },
+    },
+    include: Eagers.transfer.include,
+  });
+
+  await DatabaseClient.prisma.calendar.create({
+    data: {
+      type: Constants.CalendarEntry.TRANSFER_PARSE,
+      date: addDays(
+        profile.date,
+        random(Constants.TransferSettings.RESPONSE_MIN_DAYS, Constants.TransferSettings.RESPONSE_MAX_DAYS),
+      ).toISOString(),
+      payload: String(transfer.id),
+    },
+  });
+
+  Engine.Runtime.Instance.log.info(
+    '%s sent npc offer to %s for %s (years=%d)',
+    from.name,
+    to.name,
+    target.name,
+    contractYears,
+  );
+
+  return Promise.resolve(transfer);
+}
+
+export async function onTransferParse(entry: Calendar) {
+  const transferId = Number(entry.payload || 0);
+  if (!transferId) return Promise.resolve();
+
+  const transfer = await DatabaseClient.prisma.transfer.findFirst({
+    where: { id: transferId },
+    include: Eagers.transfer.include,
+  });
+
+  if (
+    !transfer ||
+    transfer.status !== Constants.TransferStatus.TEAM_PENDING ||
+    !transfer.to ||
+    transfer.from.id === transfer.to.id
+  ) {
+    return Promise.resolve();
+  }
+
+  const [offer] = transfer.offers;
+  if (!offer) return Promise.resolve();
+
+  const profile = await DatabaseClient.prisma.profile.findFirst(Eagers.profile);
+  if (!profile) return Promise.resolve();
+
+  let teamAcceptPbx = 60;
+  if (transfer.target.transferListed) teamAcceptPbx += 20;
+  const toElo = transfer.to.elo || 0;
+  const fromElo = transfer.from.elo || 0;
+  if (toElo > fromElo) {
+    teamAcceptPbx -= Constants.TransferSettings.PBX_NPC_SELLING_TEAM_PERFORMANCE_DAMPENER;
+  }
+
+  if (!Chance.rollD2(Math.max(5, Math.min(95, teamAcceptPbx)))) {
+    await DatabaseClient.prisma.transfer.update({
+      where: { id: transfer.id },
+      data: {
+        status: Constants.TransferStatus.TEAM_REJECTED,
+        offers: {
+          updateMany: {
+            where: { transferId: transfer.id, status: Constants.TransferStatus.TEAM_PENDING },
+            data: { status: Constants.TransferStatus.TEAM_REJECTED },
+          },
+        },
+      },
+    });
+    return Promise.resolve();
+  }
+
+  let playerAcceptPbx = 60;
+  playerAcceptPbx += getExpiryBoost(transfer.target.contractEnd as any, profile.date);
+  if (transfer.target.countryId === transfer.from.countryId) playerAcceptPbx += 10;
+
+  const listedDays = getListedDays(transfer.target as any, profile.date);
+  const lowerTierOffer = transfer.from.tier < transfer.to.tier;
+  if (lowerTierOffer && listedDays >= 90) {
+    playerAcceptPbx = Math.max(playerAcceptPbx, 92);
+  }
+
+  if (!Chance.rollD2(Math.max(5, Math.min(95, playerAcceptPbx)))) {
+    await DatabaseClient.prisma.transfer.update({
+      where: { id: transfer.id },
+      data: {
+        status: Constants.TransferStatus.PLAYER_REJECTED,
+        offers: {
+          updateMany: {
+            where: { transferId: transfer.id, status: Constants.TransferStatus.TEAM_PENDING },
+            data: { status: Constants.TransferStatus.PLAYER_REJECTED },
+          },
+        },
+      },
+    });
+    return Promise.resolve();
+  }
+
+  const fromTeam = await DatabaseClient.prisma.team.findFirst({ where: { id: transfer.from.id }, include: { players: true } });
+  const toTeam = await DatabaseClient.prisma.team.findFirst({ where: { id: transfer.to.id }, include: { players: true } });
+  if (!fromTeam || !toTeam) return Promise.resolve();
+
+  // keep both teams valid after trade (>=5 players and at least one sniper each)
+  if (!ensureTeamFloorAndSniper({ players: fromTeam.players as any })) {
+    return Promise.resolve();
+  }
+
+  const role = normalizeRole(transfer.target.role);
+  const toPlayersAfterSale = (toTeam.players || []).filter((p) => p.id !== transfer.target.id);
+  if (!ensureTeamFloorAndSniper({ players: toPlayersAfterSale as any })) {
+    return Promise.resolve();
+  }
+
+  const victim = selectBenchVictim({
+    teamPlayers: fromTeam.players as any,
+    incomingPlayerId: transfer.target.id,
+    incomingRole: role,
+    incomingXp: transfer.target.xp || 0,
+  });
+
+  // strict rule: incoming player must bench one lower-XP player at destination
+  if (!victim) {
+    return Promise.resolve();
+  }
+
+  await DatabaseClient.prisma.player.update({
+    where: { id: victim.id },
+    data: { starter: false, transferListed: true, lastOfferAt: profile.date },
+  });
+
+  await DatabaseClient.prisma.transfer.update({
+    where: { id: transfer.id },
+    data: {
+      status: Constants.TransferStatus.PLAYER_ACCEPTED,
+      offers: {
+        updateMany: {
+          where: { transferId: transfer.id, status: Constants.TransferStatus.TEAM_PENDING },
+          data: { status: Constants.TransferStatus.PLAYER_ACCEPTED },
+        },
+      },
+    },
+  });
+
+  const years = offer.contractYears ?? 1;
+  const contractEnd = addYears(profile.date, years);
+
+  await DatabaseClient.prisma.player.update({
+    where: { id: transfer.target.id },
+    data: {
+      transferListed: false,
+      starter: true,
+      team: { connect: { id: transfer.from.id } },
+      wages: offer.wages ?? transfer.target.wages,
+      contractEnd,
+      lastOfferAt: null,
+    },
+  });
+
+  await reinstateBenchedPlayerAfterSale({
+    teamId: transfer.to.id,
+    soldRole: transfer.target.role || "",
+  });
+
+  await closeOpenCareerStints(DatabaseClient.prisma, transfer.target.id, profile.date);
+  await startCareerStint(DatabaseClient.prisma, {
+    playerId: transfer.target.id,
+    teamId: transfer.from.id,
+    tier: transfer.from.tier,
+    startedAt: profile.date,
+  });
+
+  await DatabaseClient.prisma.calendar.create({
+    data: {
+      type: Constants.CalendarEntry.PLAYER_CONTRACT_EXPIRE,
+      date: contractEnd.toISOString(),
+      payload: String(transfer.target.id),
+    },
+  });
+
+  Engine.Runtime.Instance.log.info(
+    'NPC transfer accepted: %s -> %s (%s, years=%d)',
+    transfer.to.name,
+    transfer.from.name,
+    transfer.target.name,
+    years,
+  );
+
+  return Promise.resolve();
+}
+
 
 /**
  * Sync teams to their current tier.

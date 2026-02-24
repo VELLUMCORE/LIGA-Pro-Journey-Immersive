@@ -4,7 +4,7 @@
  * @module
  */
 import React from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
@@ -36,6 +36,9 @@ export default function () {
     Awaited<ReturnType<typeof api.players.all<typeof Eagers.player>>>
   >([]);
   const [worldRanking, setWorldRanking] = React.useState<number>(0);
+  const [transfers, setTransfers] = React.useState<
+    Awaited<ReturnType<typeof api.transfers.all<typeof Eagers.transfer>>>
+  >([]);
 
   // fetch data when team changes
   React.useEffect(() => {
@@ -67,6 +70,7 @@ export default function () {
         },
       })
       .then(setSquad);
+    api.team.transfers(team.id).then(setTransfers);
   }, [team]);
 
   // load settings
@@ -285,6 +289,46 @@ export default function () {
                   <td className="w-4/12 text-center">-</td>
                   <td className="w-4/12">{t('shared.noRecentMatch')}</td>
                   <td className="w-3/12">-</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </aside>
+        <aside>
+          <header className="heading prose max-w-none border-t-0!">
+            <h2>Recent Transfers</h2>
+          </header>
+          <table className="table table-fixed">
+            <tbody>
+              {transfers.slice(0, NUM_PREVIOUS).map((transfer) => (
+                <tr key={transfer.id + '__transfer'}>
+                  <td className="p-0 text-center">
+                    <img
+                      title={transfer.target.name}
+                      className="mr-2 inline-block size-12"
+                      src={transfer.target.avatar || 'resources://avatars/empty.png'}
+                    />
+                    <Link to={`/teams?teamId=${transfer.to?.id || ''}`}>
+                      <img
+                        title={transfer.to?.name || '-'}
+                        className="inline-block size-12"
+                        src={transfer.to?.blazon || 'resources://blazonry/009400.png'}
+                      />
+                    </Link>
+                  </td>
+                  <td className="text-center">&rarr;</td>
+                  <td title={transfer.from.name} className="p-0 text-center">
+                    <Link to={`/teams?teamId=${transfer.from.id}`}>
+                      <img title={transfer.from.name} className="inline-block size-12" src={transfer.from.blazon} />
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+              {[...Array(Math.max(0, NUM_PREVIOUS - transfers.length))].map((_, idx) => (
+                <tr key={`${idx}__filler_transfers`} className="text-muted">
+                  <td className="text-center">-</td>
+                  <td className="text-center">&rarr;</td>
+                  <td className="text-center">-</td>
                 </tr>
               ))}
             </tbody>

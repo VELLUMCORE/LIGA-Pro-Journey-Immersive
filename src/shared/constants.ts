@@ -336,6 +336,7 @@ export enum IPCRoute {
   SQUAD_UPDATE = '/squad/update',
   SQUAD_RELEASE_PLAYER = '/squad/release/player',
   TEAM_RANKING = '/team/ranking',
+  TEAM_TRANSFERS = '/team/transfers',
   TEAMS_ALL = '/teams/all',
   TEAMS_CREATE = '/teams/create',
   TEAMS_UPDATE = '/teams/update',
@@ -1238,6 +1239,28 @@ export const TransferSettings = {
   // how long do teams and players take to respond
   RESPONSE_MIN_DAYS: 1,
   RESPONSE_MAX_DAYS: 3,
+
+  // npc-to-npc transfer probability
+  PBX_NPC_CONSIDER: 50,
+
+  // how likely each tier is to send an offer (open -> pro)
+  PBX_NPC_TIER: [40, 30, 25, 25, 25],
+
+  // chance to consider cross-federation bids for top profiles
+  PBX_NPC_CROSS_FED_TOP: 4,
+
+  // chance an NPC team signs a free agent instead of trading with another team
+  PBX_NPC_FREE_AGENT_SIGN: 20,
+
+  // preference boost for same-country offers
+  PBX_NPC_SAME_COUNTRY_BOOST: 65,
+
+  // players with this many days left receive expiry weighting boost
+  PBX_NPC_EXPIRY_WINDOW_MIN_DAYS: 90,
+  PBX_NPC_EXPIRY_WINDOW_MAX_DAYS: 180,
+
+  // stronger teams are less likely to sell players
+  PBX_NPC_SELLING_TEAM_PERFORMANCE_DAMPENER: 20,
 
   // how much percent to add (per dollar) over the wages
   PBX_PLAYER_HIGHBALL_MODIFIER: 0.01,

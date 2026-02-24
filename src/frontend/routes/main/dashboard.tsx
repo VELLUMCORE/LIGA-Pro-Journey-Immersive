@@ -4,6 +4,7 @@
  * @module
  */
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { addDays, differenceInDays, format } from 'date-fns';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
@@ -124,6 +125,9 @@ export default function () {
   const [matchHistorial, setMatchHistorial] = React.useState<Array<typeof upcoming>>([[], []]);
   const [previous, setPrevious] = React.useState<typeof upcoming>([]);
   const [worldRankings, setWorldRankings] = React.useState<Array<number>>([]);
+  const [transfers, setTransfers] = React.useState<
+    Awaited<ReturnType<typeof api.transfers.all<typeof Eagers.transfer>>>
+  >([]);
 
   // load settings
   React.useEffect(() => {
@@ -146,6 +150,31 @@ export default function () {
     }
 
     api.matches.upcoming(Eagers.match, NUM_UPCOMING).then(setUpcoming);
+  }, [state.profile]);
+
+  // fetch recent transfers
+  React.useEffect(() => {
+    if (!state.profile) {
+      return;
+    }
+
+    api.transfers
+      .all({
+        include: Eagers.transfer.include,
+        take: NUM_PREVIOUS,
+        where: {
+          status: {
+            in: [Constants.TransferStatus.PLAYER_ACCEPTED, Constants.TransferStatus.TEAM_ACCEPTED],
+          },
+          to: {
+            isNot: null,
+          },
+        },
+        orderBy: {
+          id: 'desc',
+        },
+      })
+      .then(setTransfers);
   }, [state.profile]);
 
   // fetch match facts for spotlight
@@ -263,9 +292,9 @@ export default function () {
                       <td className="w-1/6" title={format(match.date, 'PPPP')}>
                         {format(match.date, 'MM/dd')}
                       </td>
-                      <td className="w-3/6 truncate" title={opponent?.team.name || '-'}>
+                      <td className="w-3/6 truncate" title={opponent?.team?.name || '-'}>
                         <img
-                          src={opponent?.team.blazon || 'resources://blazonry/009400.png'}
+                          src={opponent?.team?.blazon || 'resources://blazonry/009400.png'}
                           className="mr-2 inline-block size-4"
                         />
                         <span>{opponent?.team.name || '-'}</span>
@@ -534,7 +563,8 @@ export default function () {
                 );
               })}
           </section>
-          {(() => {
+          <section className="divide-base-content/10 flex divide-x">
+            <aside className="w-2/3">{(() => {
             // placeholder while things are loading
             // or if there are no matches
             if (!spotlight) {
@@ -741,10 +771,56 @@ export default function () {
                 </article>
               </section>
             );
-          })()}
+          })()}</aside>
+          <aside className="w-1/3">
+            <header className="heading prose max-w-none border-t-0!">
+              <h2>Recent Transfers</h2>
+            </header>
+            <table className="table table-fixed">
+              <tbody>
+                {transfers.slice(0, NUM_PREVIOUS).map((transfer) => (
+                  <tr key={`${transfer.id}__transfer_recent`}>
+                    <td className="p-0 text-center">
+                      <img
+                        title={transfer.target.name}
+                        className="mr-2 inline-block size-12"
+                        src={transfer.target.avatar || 'resources://avatars/empty.png'}
+                      />
+                      <Link to={`/teams?teamId=${transfer.to?.id || ''}`}>
+                        <img
+                          title={transfer.to?.name || '-'}
+                          className="inline-block size-12"
+                          src={transfer.to?.blazon || 'resources://blazonry/009400.png'}
+                        />
+                      </Link>
+                    </td>
+                    <td className="text-center">&rarr;</td>
+                    <td className="p-0 text-center">
+                      <Link to={`/teams?teamId=${transfer.from.id}`}>
+                        <img
+                          title={transfer.from.name}
+                          className="inline-block size-12"
+                          src={transfer.from.blazon}
+                        />
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+                {[...Array(Math.max(0, NUM_PREVIOUS - transfers.length))].map((_, idx) => (
+                  <tr key={`${idx}__filler_transfer_recent`} className="text-muted">
+                    <td className="text-center">-</td>
+                    <td className="text-center">&rarr;</td>
+                    <td className="text-center">-</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </aside>
+          </section>
           <section className="divide-base-content/10 grid grid-cols-2 divide-x">
             {((!!spotlight && spotlight.competitors) || [...Array(2)]).map(
               (competitor, competitorIdx) => {
+                const teamId = competitor?.teamId;
                 const matches = competitor ? matchHistorial[competitorIdx] : [];
                 const previousFiller = [...Array(Math.max(0, NUM_PREVIOUS - matches.length))];
                 return (
@@ -763,10 +839,10 @@ export default function () {
                         {!!matches.length &&
                           matches.slice(0, NUM_PREVIOUS).map((match) => {
                             const opponent = match.competitors.find(
-                              (c) => c.teamId !== competitor.teamId,
+                              (c) => teamId != null && c.teamId !== teamId,
                             );
                             const result = match.competitors.find(
-                              (c) => c.teamId === competitor.teamId,
+                              (c) => teamId != null && c.teamId === teamId,
                             )?.result;
                             const onClick =
                               match._count.events > 0
@@ -809,16 +885,16 @@ export default function () {
                                     .map((competitor) => competitor.score)
                                     .join(' : ') || '-'}
                                 </td>
-                                <td className="w-4/12 truncate" title={opponent?.team.name || '-'}>
+                                <td className="w-4/12 truncate" title={opponent?.team?.name || '-'}>
                                   {!!opponent?.team && (
                                     <img
                                       className="mr-2 inline-block size-4"
                                       src={
-                                        opponent?.team.blazon || 'resources://blazonry/009400.png'
+                                        opponent?.team?.blazon || 'resources://blazonry/009400.png'
                                       }
                                     />
                                   )}
-                                  <span>{opponent?.team.name || 'BYE'}</span>
+                                  <span>{opponent?.team?.name || 'BYE'}</span>
                                 </td>
                                 <td
                                   className="w-3/12 truncate"

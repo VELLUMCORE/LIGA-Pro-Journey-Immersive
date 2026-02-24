@@ -141,6 +141,29 @@ export default function registerDatabaseHandlers() {
     return prisma.team.getWorldRanking(id);
   });
 
+  ipcMain.handle(Constants.IPCRoute.TEAM_TRANSFERS, async (_, id: number) => {
+    const prisma = await DatabaseClient.connect();
+
+    const sent = await prisma.transfer.findMany({
+      include: Eagers.transfer.include,
+      where: {
+        status: Constants.TransferStatus.PLAYER_ACCEPTED,
+        from: { id },
+        to: { isNot: null },
+      },
+    });
+
+    const received = await prisma.transfer.findMany({
+      include: Eagers.transfer.include,
+      where: {
+        status: Constants.TransferStatus.PLAYER_ACCEPTED,
+        to: { id },
+      },
+    });
+
+    return [...sent, ...received].sort((a, b) => b.id - a.id);
+  });
+
   ipcMain.handle(Constants.IPCRoute.TEAMS_ALL, async (_, query) => {
     const prisma = await DatabaseClient.connect();
     return prisma.team.findMany(query);
