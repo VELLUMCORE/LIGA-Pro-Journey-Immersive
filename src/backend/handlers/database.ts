@@ -144,24 +144,30 @@ export default function registerDatabaseHandlers() {
   ipcMain.handle(Constants.IPCRoute.TEAM_TRANSFERS, async (_, id: number) => {
     const prisma = await DatabaseClient.connect();
 
-    const sent = await prisma.transfer.findMany({
+    return prisma.transfer.findMany({
       include: Eagers.transfer.include,
       where: {
-        status: Constants.TransferStatus.PLAYER_ACCEPTED,
-        from: { id },
-        to: { isNot: null },
+        OR: [
+          {
+            status: Constants.TransferStatus.PLAYER_ACCEPTED,
+            OR: [{ from: { id } }, { to: { id } }],
+          },
+          {
+            status: Constants.TransferStatus.EXPIRED,
+            from: { id },
+          },
+          {
+            status: Constants.TransferStatus.TEAM_ACCEPTED,
+            teamIdFrom: id,
+            teamIdTo: id,
+            offers: {
+              some: { cost: 0 },
+            },
+          },
+        ],
       },
+      orderBy: { id: 'desc' },
     });
-
-    const received = await prisma.transfer.findMany({
-      include: Eagers.transfer.include,
-      where: {
-        status: Constants.TransferStatus.PLAYER_ACCEPTED,
-        to: { id },
-      },
-    });
-
-    return [...sent, ...received].sort((a, b) => b.id - a.id);
   });
 
   ipcMain.handle(Constants.IPCRoute.TEAMS_ALL, async (_, query) => {

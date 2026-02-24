@@ -3699,6 +3699,211 @@ async function processNPCContractExtensions() {
   if (!profile) return Promise.resolve();
 
   const now = profile.date;
+  const prisma = DatabaseClient.prisma;
+  const blockedRejoinByTeam = new Map<number, Set<number>>();
+
+  async function ensureNPCStarterFloorAndAwper(teamId: number, preferredRole?: string | null) {
+    const team = await prisma.team.findFirst({
+      where: { id: teamId },
+      include: {
+        country: { include: { continent: true } },
+        players: {
+          include: {
+            country: { include: { continent: true } },
+            team: { include: { country: { include: { continent: true } } } },
+          },
+        },
+      },
+    });
+    if (!team) return;
+
+    const needsStarter = () => team.players.filter((p) => p.starter).length < Constants.Application.SQUAD_MIN_LENGTH;
+    const needsAwper = () => countStarterSnipers(team.players as any) < 1;
+
+    while (needsStarter() || needsAwper()) {
+      const desiredRole = needsAwper() ? "SNIPER" : normalizeRole(preferredRole || "");
+
+      const promote = team.players
+        .filter((p) => !p.starter)
+        .filter((p) => !desiredRole || normalizeRole(p.role) === desiredRole)
+        .sort((a, b) => (b.xp || 0) - (a.xp || 0))[0]
+        || team.players.filter((p) => !p.starter).sort((a, b) => (b.xp || 0) - (a.xp || 0))[0];
+
+      if (promote) {
+        await prisma.player.update({
+          where: { id: promote.id },
+          data: { starter: true, transferListed: false, lastOfferAt: null },
+        });
+        promote.starter = true;
+        continue;
+      }
+
+      const sameFed = team.country?.continent?.federationId;
+      const freeAgents = await prisma.player.findMany({
+        where: { teamId: null, userControlled: false },
+        include: { country: { include: { continent: true } } },
+        take: 200,
+      });
+
+      const blockedRejoin = blockedRejoinByTeam.get(team.id) || new Set<number>();
+
+      const freeAgent = freeAgents
+        .filter((p) => !blockedRejoin.has(p.id))
+        .filter((p) => !desiredRole || normalizeRole(p.role) === desiredRole)
+        .filter(
+          (p) =>
+            p.countryId === team.countryId ||
+            (sameFed != null && p.country?.continent?.federationId === sameFed),
+        )
+        .sort((a, b) => (b.xp || 0) - (a.xp || 0))[0]
+        || freeAgents
+          .filter((p) => !blockedRejoin.has(p.id))
+          .filter((p) => !desiredRole || normalizeRole(p.role) === desiredRole)
+          .sort((a, b) => (b.xp || 0) - (a.xp || 0))[0];
+
+      if (freeAgent) {
+        const years = getTierContractYears(team.tier);
+        const contractEnd = addYears(now, years);
+
+        await prisma.player.update({
+          where: { id: freeAgent.id },
+          data: {
+            teamId: team.id,
+            starter: true,
+            transferListed: false,
+            contractEnd,
+          },
+        });
+
+        await prisma.transfer.create({
+          data: {
+            status: Constants.TransferStatus.TEAM_ACCEPTED,
+            from: { connect: { id: team.id } },
+            to: { connect: { id: team.id } },
+            target: { connect: { id: freeAgent.id } },
+            offers: {
+              create: [{
+                status: Constants.TransferStatus.TEAM_ACCEPTED,
+                cost: 0,
+                wages: freeAgent.wages || 0,
+                contractYears: years,
+              }],
+            },
+          },
+        });
+
+        await closeOpenCareerStints(prisma, freeAgent.id, now);
+        await startCareerStint(prisma, {
+          playerId: freeAgent.id,
+          teamId: team.id,
+          tier: team.tier,
+          startedAt: now,
+        });
+
+        team.players.push({ ...freeAgent, teamId: team.id, starter: true } as any);
+        continue;
+      }
+
+      const benched = await prisma.player.findMany({
+        where: {
+          userControlled: false,
+          starter: false,
+          teamId: { not: null, notIn: [team.id] },
+        },
+        include: {
+          team: { include: { country: { include: { continent: true } } } },
+          country: { include: { continent: true } },
+        },
+        take: 250,
+      });
+
+      const donor = benched
+        .filter((p) => !desiredRole || normalizeRole(p.role) === desiredRole)
+        .filter(
+          (p) =>
+            p.countryId === team.countryId ||
+            (sameFed != null && p.country?.continent?.federationId === sameFed),
+        )
+        .sort((a, b) => (a.xp || 0) - (b.xp || 0))[0];
+
+      if (!donor || !donor.teamId) break;
+
+      const years = getTierContractYears(team.tier);
+      const contractEnd = addYears(now, years);
+
+      await prisma.player.update({
+        where: { id: donor.id },
+        data: {
+          teamId: team.id,
+          starter: true,
+          transferListed: false,
+          contractEnd,
+        },
+      });
+
+      await closeOpenCareerStints(prisma, donor.id, now);
+      await startCareerStint(prisma, {
+        playerId: donor.id,
+        teamId: team.id,
+        tier: team.tier,
+        startedAt: now,
+      });
+
+      team.players.push({ ...donor, teamId: team.id, starter: true } as any);
+    }
+  }
+
+  const expired = await prisma.player.findMany({
+    where: {
+      teamId: { not: null },
+      contractEnd: { lte: now },
+      userControlled: false,
+    },
+    include: { team: true },
+    take: 40,
+  });
+
+  for (const player of expired) {
+    if (!player.teamId || !player.team) continue;
+
+    await closeOpenCareerStints(prisma, player.id, now);
+
+    await prisma.player.update({
+      where: { id: player.id },
+      data: {
+        teamId: null,
+        contractEnd: null,
+        starter: false,
+        transferListed: true,
+        lastOfferAt: now,
+      },
+    });
+
+    const teamBlocked = blockedRejoinByTeam.get(player.teamId) || new Set<number>();
+    teamBlocked.add(player.id);
+    blockedRejoinByTeam.set(player.teamId, teamBlocked);
+
+    await prisma.transfer.create({
+      data: {
+        status: Constants.TransferStatus.EXPIRED,
+        from: { connect: { id: player.teamId } },
+        target: { connect: { id: player.id } },
+        offers: {
+          create: [{
+            status: Constants.TransferStatus.EXPIRED,
+            cost: 0,
+            wages: player.wages || 0,
+            contractYears: 0,
+          }],
+        },
+      },
+    });
+
+    if (player.starter) {
+      await ensureNPCStarterFloorAndAwper(player.teamId, player.role);
+    }
+  }
+
   const horizon = addDays(now, Constants.PlayerContractSettings.EXTENSION_EVAL_DAYS_BEFORE_END ?? 30);
 
   const expiring = await DatabaseClient.prisma.player.findMany({
@@ -3716,7 +3921,7 @@ async function processNPCContractExtensions() {
   if (!expiring.length) return Promise.resolve();
 
   for (const player of shuffle(expiring).slice(0, 5)) {
-    if (!player.teamId || !player.team || player.transferListed) continue;
+    if (!player.teamId || !player.team || player.transferListed || !player.starter) continue;
 
     const tierTeams = await DatabaseClient.prisma.team.findMany({
       where: { tier: player.team.tier, profile: null },
@@ -3727,7 +3932,7 @@ async function processNPCContractExtensions() {
       ? tierTeams.reduce((sum, t) => sum + (t.elo || 0), 0) / tierTeams.length
       : (player.team.elo || 0);
 
-    let teamOfferPbx = (player.team.elo || 0) >= avgElo ? 70 : 45;
+    let teamOfferPbx = (player.team.elo || 0) >= avgElo ? 82 : 30;
     const daysLeft = differenceInDays(player.contractEnd!, now);
     if (daysLeft <= 14) teamOfferPbx += 10;
 
