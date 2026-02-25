@@ -1,24 +1,22 @@
 /**
- * The pregame modal allows users to customize settings
- * or their squad before starting their match.
+ * The pregame modal allows users to handle map veto
+ * or manage their squad before starting their match.
  *
  * @module
  */
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { cloneDeep, differenceBy, isNull, merge, pick, random, sample, set } from 'lodash';
+import { differenceBy, random, sample } from 'lodash';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
 import { useTranslation } from '@liga/frontend/hooks';
 import { Image, PlayerCard } from '@liga/frontend/components';
-import { FaExclamationTriangle } from 'react-icons/fa';
 
 /** @enum */
 enum Tab {
   MAPS,
   SQUADS,
-  SETTINGS,
 }
 
 /** @interface */
@@ -37,12 +35,6 @@ const CPU_THINKING_TIME_MAX = 3000;
 /** @constant */
 const CPU_THINKING_TIME_MIN = 1000;
 
-/** @constant */
-const LOCAL_STORAGE_KEY = 'settings';
-
-/** @constants */
-const SETTINGS_DEFAULT = pick(Constants.Settings, ['matchRules']);
-
 /** @constants */
 const VETO_STYLES = {
   badge: {
@@ -58,26 +50,6 @@ const VETO_STYLES = {
 };
 
 /**
- * Renders an override settings warning.
- *
- * @param props       The root props.
- * @param props.left  The left value to compare.
- * @param props.right The right value to compare.
- * @function
- */
-function SettingsOverrideLabel(props: { left: unknown; right: unknown }) {
-  if (props.left === props.right) {
-    return;
-  }
-
-  return (
-    <span className="tooltip" data-tip="Overrides the default. Resets after this match ends.">
-      <FaExclamationTriangle className="text-warning" />
-    </span>
-  );
-}
-
-/**
  * Exports this module.
  *
  * @exports
@@ -88,7 +60,6 @@ export default function () {
   const { state } = React.useContext(AppStateContext);
   const [activeTab, setActiveTab] = React.useState<Tab>(Tab.MAPS);
   const [match, setMatch] = React.useState<Matches[number]>();
-  const [settings, setSettings] = React.useState(SETTINGS_DEFAULT);
   const [userSquad, setUserSquad] = React.useState<
     Awaited<ReturnType<typeof api.squad.all<typeof Eagers.player>>>
   >([]);
@@ -96,21 +67,12 @@ export default function () {
   const [working, setWorking] = React.useState(false);
   const [mapPool, setMapPool] = React.useState<Awaited<ReturnType<typeof api.mapPool.find>>>([]);
 
-  // we only want to maintain and override specific settings
-  // and not copy/merge with the whole object
+  // load profile settings for game-specific visuals
   const settingsAll = React.useMemo(
     () => !!state.profile && Util.loadSettings(state.profile.settings),
     [],
   );
-  const settingsLocal = React.useMemo(
-    () =>
-      !!localStorage.getItem(LOCAL_STORAGE_KEY) &&
-      merge(
-        settings,
-        JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) as typeof Constants.Settings,
-      ),
-    [],
-  );
+
 
   // initial data load
   React.useEffect(() => {
@@ -140,15 +102,6 @@ export default function () {
       })
       .then((matches) => setMatch(matches[0]));
   }, []);
-
-  // load settings
-  React.useEffect(() => {
-    if (settingsLocal) {
-      setSettings(settingsLocal);
-    } else {
-      setSettings(pick(settingsAll, ['matchRules']));
-    }
-  }, [settingsLocal, settingsAll]);
 
   // grab basic match info
   const game = React.useMemo(() => match && match.games[0], [match]);
@@ -193,13 +146,6 @@ export default function () {
     [vetoHistory, vetoSequence],
   );
 
-  // handle settings updates
-  const onSettingsUpdate = (path: string, value: unknown) => {
-    const modified = cloneDeep(settings);
-    set(modified, path, value);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(modified));
-    setSettings(modified);
-  };
 
   // handle map veto selections
   const onVetoSelection = (map: string) => {
@@ -474,9 +420,6 @@ export default function () {
               });
             }
 
-            const allowBackfill =
-              isUserTeam && team.players.length <= Constants.Application.SQUAD_MIN_LENGTH;
-
             const starters = Util.getSquad(team, state.profile, isUserTeam);
             const bench = differenceBy(team.players, starters, 'id');
             const squad = { starters, bench };
@@ -546,34 +489,7 @@ export default function () {
           })}
         </section>
       )}
-      {activeTab === Tab.SETTINGS && (
-        <form className="form-ios flex-1 overflow-y-scroll">
-          <fieldset>
-            <article>
-              <header>
-                <p>{t('shared.maxRoundsTitle')}</p>
-                <SettingsOverrideLabel
-                  left={Number(settings.matchRules.maxRounds)}
-                  right={Number(settingsAll.matchRules.maxRounds)}
-                />
-              </header>
-              <aside>
-                <select
-                  className="select"
-                  onChange={(event) => onSettingsUpdate('matchRules.maxRounds', event.target.value)}
-                  value={settings.matchRules.maxRounds}
-                >
-                  {[6, 12, 24, 30].map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </aside>
-            </article>
-          </fieldset>
-        </form>
-      )}
+
       <button
         className="btn btn-xl btn-block btn-secondary rounded-none active:translate-0!"
         disabled={!vetoSequenceComplete}

@@ -23,7 +23,6 @@ import {
   FaStop,
   FaStopwatch,
   FaStream,
-  FaTv,
 } from 'react-icons/fa';
 
 /** @interface */
@@ -759,21 +758,6 @@ export default function () {
                       }}
                     >
                       {t('main.dashboard.play')}
-                    </button>
-                    <button
-                      className="btn join-item btn-wide"
-                      disabled={disabled || spotlight.status !== Constants.MatchStatus.READY}
-                      onClick={() => api.calendar.sim().then(() => dispatch(calendarAdvance(1)))}
-                    >
-                      {t('main.dashboard.simulate')}
-                    </button>
-                    <button
-                      title={t('main.dashboard.spectateMatch')}
-                      className="btn btn-secondary join-item"
-                      disabled={disabled}
-                      onClick={() => dispatch(play(spotlight.id, true))}
-                    >
-                      <FaTv />
                     </button>
                   </footer>
                 </article>

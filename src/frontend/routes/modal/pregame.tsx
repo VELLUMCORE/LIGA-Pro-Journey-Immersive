@@ -1,47 +1,20 @@
 /**
- * The pregame modal allows users to customize settings
- * or their squad before starting their match.
+ * The pregame modal allows users to manage their squad
+ * before starting their match.
  *
  * @module
  */
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { cloneDeep, differenceBy, isNull, merge, pick, set } from 'lodash';
+import { differenceBy } from 'lodash';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
 import { useTranslation } from '@liga/frontend/hooks';
 import { Image, PlayerCard } from '@liga/frontend/components';
-import { FaExclamationTriangle } from 'react-icons/fa';
 
 /** @type {Matches} */
 type Matches<T = typeof Eagers.match> = Awaited<ReturnType<typeof api.matches.all<T>>>;
-
-/** @constant */
-const LOCAL_STORAGE_KEY = 'settings';
-
-/** @constants */
-const SETTINGS_DEFAULT = pick(Constants.Settings, ['matchRules']);
-
-/**
- * Renders an override settings warning.
- *
- * @param props       The root props.
- * @param props.left  The left value to compare.
- * @param props.right The right value to compare.
- * @function
- */
-function SettingsOverrideLabel(props: { left: unknown; right: unknown }) {
-  if (props.left === props.right) {
-    return;
-  }
-
-  return (
-    <span className="tooltip" data-tip="Overrides the default. Resets after this match ends.">
-      <FaExclamationTriangle className="text-warning" />
-    </span>
-  );
-}
 
 /**
  * Exports this module.
@@ -52,26 +25,14 @@ export default function () {
   const location = useLocation();
   const t = useTranslation('windows');
   const { state } = React.useContext(AppStateContext);
-  const [settings, setSettings] = React.useState(SETTINGS_DEFAULT);
   const [match, setMatch] = React.useState<Matches[number]>();
   const [userSquad, setUserSquad] = React.useState<
     Awaited<ReturnType<typeof api.squad.all<typeof Eagers.player>>>
   >([]);
-  const [mapPool, setMapPool] = React.useState<Awaited<ReturnType<typeof api.mapPool.find>>>([]);
 
-  // we only want to maintain and override specific settings
-  // and not copy/merge with the whole object
+  // load profile settings for game-specific visuals
   const settingsAll = React.useMemo(
     () => !!state.profile && Util.loadSettings(state.profile.settings),
-    [],
-  );
-  const settingsLocal = React.useMemo(
-    () =>
-      !!localStorage.getItem(LOCAL_STORAGE_KEY) &&
-      merge(
-        settings,
-        JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) as typeof Constants.Settings,
-      ),
     [],
   );
 
@@ -81,15 +42,6 @@ export default function () {
       return;
     }
 
-    api.mapPool
-      .find({
-        where: {
-          gameVersion: {
-            slug: settingsAll.general.game,
-          },
-        },
-      })
-      .then(setMapPool);
     api.squad.all().then(setUserSquad);
     api.matches
       .all({
@@ -100,23 +52,6 @@ export default function () {
       })
       .then((matches) => setMatch(matches[0]));
   }, []);
-
-  // load settings
-  React.useEffect(() => {
-    if (settingsLocal) {
-      setSettings(settingsLocal);
-    } else {
-      setSettings(pick(settingsAll, ['matchRules']));
-    }
-  }, [settingsLocal, settingsAll]);
-
-  // handle settings updates
-  const onSettingsUpdate = (path: string, value: unknown) => {
-    const modified = cloneDeep(settings);
-    set(modified, path, value);
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(modified));
-    setSettings(modified);
-  };
 
   // grab basic match info
   const game = React.useMemo(() => match && match.games[0], [match]);
@@ -260,33 +195,6 @@ export default function () {
           );
         })}
       </section>
-      <form className="form-ios">
-        <fieldset>
-          <legend className="border-t-0!">{t('play.matchRules')}</legend>
-          <article>
-            <header>
-              <p>{t('shared.maxRoundsTitle')}</p>
-              <SettingsOverrideLabel
-                left={Number(settings.matchRules.maxRounds)}
-                right={Number(settingsAll.matchRules.maxRounds)}
-              />
-            </header>
-            <aside>
-              <select
-                className="select"
-                onChange={(event) => onSettingsUpdate('matchRules.maxRounds', event.target.value)}
-                value={settings.matchRules.maxRounds}
-              >
-                {[6, 12, 24, 30].map((value) => (
-                  <option key={value} value={value}>
-                    {value}
-                  </option>
-                ))}
-              </select>
-            </aside>
-          </article>
-        </fieldset>
-      </form>
     </main>
   );
 }
