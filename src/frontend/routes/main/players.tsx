@@ -4,6 +4,7 @@
  * @module
  */
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { random } from 'lodash';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
@@ -486,7 +487,13 @@ export default function () {
                       {!!player.team && (
                         <>
                           <img src={player.team.blazon} className="mr-2 inline-block size-4" />
-                          <span>{player.team.name}</span>
+                          <Link
+                            to={`/teams?teamId=${player.team.id}`}
+                            onClick={(event) => event.stopPropagation()}
+                            className="hover:underline"
+                          >
+                            {player.team.name}
+                          </Link>
                         </>
                       )}
                     </td>

@@ -40,6 +40,13 @@ export default function () {
     Awaited<ReturnType<typeof api.transfers.all<typeof Eagers.transfer>>>
   >([]);
 
+  const openPlayerTransferModal = React.useCallback((playerId: number) => {
+    api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
+      target: '/transfer',
+      payload: playerId,
+    });
+  }, []);
+
   // fetch data when team changes
   React.useEffect(() => {
     api.matches.previous(Eagers.match, team.id, NUM_PREVIOUS).then(setMatches);
@@ -194,7 +201,11 @@ export default function () {
                 <tr key={player.id + '__squad'}>
                   <td
                     title={player.id === state.profile.playerId ? t('shared.you') : undefined}
-                    className={cx('p-0', player.id === state.profile.playerId && 'bg-base-200/50')}
+                    className={cx(
+                      'hover:bg-base-content/10 cursor-pointer p-0',
+                      player.id === state.profile.playerId && 'bg-base-200/50',
+                    )}
+                    onClick={() => openPlayerTransferModal(player.id)}
                   >
                     <PlayerCard
                       compact
@@ -315,11 +326,18 @@ export default function () {
                 return (
                   <tr key={transfer.id + '__transfer'}>
                     <td className="p-0 text-center">
-                      <img
-                        title={transfer.target.name}
-                        className="mr-2 inline-block size-12"
-                        src={transfer.target.avatar || 'resources://avatars/empty.png'}
-                      />
+                      <button
+                        type="button"
+                        className="mr-2 inline-block"
+                        title={`View ${transfer.target.name}`}
+                        onClick={() => openPlayerTransferModal(transfer.target.id)}
+                      >
+                        <img
+                          title={transfer.target.name}
+                          className="inline-block size-12"
+                          src={transfer.target.avatar || 'resources://avatars/empty.png'}
+                        />
+                      </button>
                       {isFreeAgentTransfer ? (
                         <img
                           title="No Team"

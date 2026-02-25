@@ -129,6 +129,13 @@ export default function () {
     Awaited<ReturnType<typeof api.transfers.all<typeof Eagers.transfer>>>
   >([]);
 
+  const openPlayerTransferModal = React.useCallback((playerId: number) => {
+    api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
+      target: '/transfer',
+      payload: playerId,
+    });
+  }, []);
+
   // load settings
   React.useEffect(() => {
     if (!state.profile) {
@@ -789,11 +796,18 @@ export default function () {
                   return (
                     <tr key={`${transfer.id}__transfer_recent`}>
                       <td className="p-0 text-center">
-                        <img
-                          title={transfer.target.name}
-                          className="mr-2 inline-block size-12"
-                          src={transfer.target.avatar || 'resources://avatars/empty.png'}
-                        />
+                        <button
+                          type="button"
+                          className="mr-2 inline-block"
+                          title={`View ${transfer.target.name}`}
+                          onClick={() => openPlayerTransferModal(transfer.target.id)}
+                        >
+                          <img
+                            title={transfer.target.name}
+                            className="inline-block size-12"
+                            src={transfer.target.avatar || 'resources://avatars/empty.png'}
+                          />
+                        </button>
                         {isFreeAgentTransfer ? (
                           <img
                             title="No Team"

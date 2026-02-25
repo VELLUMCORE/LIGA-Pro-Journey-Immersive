@@ -223,8 +223,19 @@ function Root() {
     // handle awards
     api.ipc.on(Constants.IPCRoute.CONFETTI_START, Confetti.start);
 
-    // handle play events
-    api.ipc.on(Constants.IPCRoute.WINDOW_SEND, (matchId: number) => dispatch(play(matchId)));
+    // handle play events / external navigation requests
+    api.ipc.on(
+      Constants.IPCRoute.WINDOW_SEND,
+      (payload: number | { target?: string }) => {
+        if (typeof payload === 'number') {
+          return dispatch(play(payload));
+        }
+
+        if (payload?.target) {
+          navigate(payload.target);
+        }
+      },
+    );
 
     // setup app status heartbeat
     const heartbeat = setInterval(

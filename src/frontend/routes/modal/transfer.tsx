@@ -11,7 +11,7 @@
 
 import React from 'react';
 import { flatten } from 'lodash';
-import { useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Bot, Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
@@ -444,7 +444,20 @@ export default function TransferModal() {
                   <tr key={offer.id}>
                     <td>
                       <img src={team.blazon} className="inline-block size-6" />
-                      <span>&nbsp;{team.name}</span>
+                      <span>&nbsp;</span>
+                      <Link
+                        to={`/teams?teamId=${team.id}`}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          api.window.send(Constants.WindowIdentifier.Main, {
+                            target: `/teams?teamId=${team.id}`,
+                          });
+                          api.window.close(Constants.WindowIdentifier.Modal);
+                        }}
+                        className="hover:underline"
+                      >
+                        {team.name}
+                      </Link>
                     </td>
 
                     <td className="text-center">
