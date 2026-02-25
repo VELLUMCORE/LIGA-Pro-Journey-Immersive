@@ -310,6 +310,7 @@ export default function () {
                 const isFreeAgentTransfer =
                   transfer.status === Constants.TransferStatus.TEAM_ACCEPTED &&
                   (latestOffer?.cost || 0) === 0;
+                const isContractExpiry = transfer.status === Constants.TransferStatus.EXPIRED;
 
                 return (
                   <tr key={transfer.id + '__transfer'}>
@@ -319,19 +320,27 @@ export default function () {
                         className="mr-2 inline-block size-12"
                         src={transfer.target.avatar || 'resources://avatars/empty.png'}
                       />
-                      <Link to={`/teams?teamId=${transfer.to?.id || ''}`}>
-                        <img
-                          title={transfer.to?.name || '-'}
-                          className="inline-block size-12"
-                          src={transfer.to?.blazon || 'resources://blazonry/009400.png'}
-                        />
-                      </Link>
-                    </td>
-                    <td className="text-center">&rarr;</td>
-                    <td title={isFreeAgentTransfer ? 'Free Agent' : transfer.from.name} className="p-0 text-center">
                       {isFreeAgentTransfer ? (
                         <img
-                          title="Free Agent"
+                          title="No Team"
+                          className="inline-block size-12"
+                          src="resources://blazonry/noteam.svg"
+                        />
+                      ) : (
+                        <Link to={`/teams?teamId=${isContractExpiry ? transfer.from.id : transfer.to?.id || ''}`}>
+                          <img
+                            title={isContractExpiry ? transfer.from.name : transfer.to?.name || '-'}
+                            className="inline-block size-12"
+                            src={isContractExpiry ? transfer.from.blazon : transfer.to?.blazon || 'resources://blazonry/009400.png'}
+                          />
+                        </Link>
+                      )}
+                    </td>
+                    <td className="text-center">&rarr;</td>
+                    <td title={isContractExpiry ? 'No Team' : transfer.from.name} className="p-0 text-center">
+                      {isContractExpiry ? (
+                        <img
+                          title="No Team"
                           className="inline-block size-12"
                           src="resources://blazonry/noteam.svg"
                         />

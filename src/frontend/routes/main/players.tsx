@@ -21,7 +21,7 @@ import {
 } from '@liga/frontend/components/select';
 
 /** @constant */
-const NUM_COLUMNS = 6;
+const NUM_COLUMNS = 4;
 
 /** @constant */
 const PAGE_SIZE = 100;
@@ -36,7 +36,6 @@ const PAGE_SIZE = 100;
  * @param transferListed  Whether to search for only transfer listed players.
  * @param orderBy         Sorting direction.
  * @param playerName      Filter by player name.
- * @param prestige        Filter player's prestige level.
  * @param weapon          Filter by player weapon preference.
  * @function
  */
@@ -48,14 +47,12 @@ function buildPlayerQuery(
   transferListed?: boolean,
   orderBy?: ExtractBaseType<Parameters<typeof api.players.all>[number]['orderBy']>,
   playerName?: string,
-  prestige?: number,
   role?: string,
 ): Parameters<typeof api.players.all>[number] {
   return {
     ...(orderBy ? { orderBy } : {}),
     where: {
       ...(transferListed ? { transferListed } : {}),
-      ...(prestige ? { prestige } : {}),
       ...(role ? { role } : {}),
       ...(playerName !== ''
         ? {
@@ -104,7 +101,6 @@ export default function () {
   const [selectedCountry, setSelectedCountry] =
     React.useState<ReturnType<typeof findCountryOptionByValue>>();
   const [selectedPlayerName, setSelectedPlayerName] = React.useState('');
-  const [selectedPlayerPrestige, setSelectedPlayerPrestige] = React.useState<number>();
   const [selectedPlayerRole, setSelectedPlayerRole] = React.useState<Constants.PlayerRole | ''>('');
   const [selectedTierId, setSelectedTierId] = React.useState<number>();
   const [selectedTransferStatus, setSelectedTransferStatus] = React.useState<boolean>();
@@ -130,7 +126,6 @@ export default function () {
         selectedTransferStatus,
         selectedPlayerOrderBy,
         selectedPlayerName,
-        selectedPlayerPrestige,
         selectedPlayerRole
       ),
     [
@@ -141,7 +136,6 @@ export default function () {
       selectedTransferStatus,
       selectedPlayerOrderBy,
       selectedPlayerName,
-      selectedPlayerPrestige,
       selectedPlayerRole
     ],
   );
@@ -308,31 +302,6 @@ export default function () {
             </section>
             <section>
               <header>
-                <p>Potential</p>
-              </header>
-              <article>
-                <select
-                  className="select"
-                  onChange={(event) =>
-                    setSelectedPlayerPrestige(
-                      event.target.value === ''
-                        ? ('' as unknown as number)
-                        : Number(event.target.value),
-                    )
-                  }
-                  value={selectedPlayerPrestige}
-                >
-                  <option value="">Any</option>
-                  {Constants.Prestige.map((prestige, prestigeId) => (
-                    <option key={prestige + '__skill'} value={prestigeId}>
-                      {[...Array(prestigeId + 1)].map(() => '⭐')}
-                    </option>
-                  ))}
-                </select>
-              </article>
-            </section>
-            <section>
-              <header>
                 <p>Role</p>
               </header>
               <article>
@@ -415,7 +384,6 @@ export default function () {
                   setSelectedCountry(null);
                   setSelectedFederationId('' as unknown as number);
                   setSelectedPlayerName('');
-                  setSelectedPlayerPrestige('' as unknown as number);
                   setSelectedPlayerRole('' as Constants.PlayerRole);
                   setSelectedTierId('' as unknown as number);
                   setSelectedTransferStatus(null);
@@ -445,44 +413,6 @@ export default function () {
                     {t('main.players.tier')}
                     <span className={cx(selectedPlayerOrderBy?.team?.tier && 'text-primary')}>
                       {selectedPlayerOrderBy?.team?.tier === 'desc' ? (
-                        <FaSortAmountDown />
-                      ) : (
-                        <FaSortAmountDownAlt />
-                      )}
-                    </span>
-                  </header>
-                </th>
-                <th
-                  className="hover:bg-base-300 cursor-pointer"
-                  onClick={() =>
-                    setSelectedPlayerOrderBy(
-                      Util.parseSortingDirection('cost', selectedPlayerOrderBy?.cost),
-                    )
-                  }
-                >
-                  <header className="flex items-center justify-center gap-2">
-                    {t('shared.cost')}
-                    <span className={cx(selectedPlayerOrderBy?.cost && 'text-primary')}>
-                      {selectedPlayerOrderBy?.cost === 'desc' ? (
-                        <FaSortAmountDown />
-                      ) : (
-                        <FaSortAmountDownAlt />
-                      )}
-                    </span>
-                  </header>
-                </th>
-                <th
-                  className="hover:bg-base-300 cursor-pointer"
-                  onClick={() =>
-                    setSelectedPlayerOrderBy(
-                      Util.parseSortingDirection('wages', selectedPlayerOrderBy?.wages),
-                    )
-                  }
-                >
-                  <header className="flex items-center justify-center gap-2">
-                    {t('main.players.wages')}
-                    <span className={cx(selectedPlayerOrderBy?.wages && 'text-primary')}>
-                      {selectedPlayerOrderBy?.wages === 'desc' ? (
                         <FaSortAmountDown />
                       ) : (
                         <FaSortAmountDownAlt />
@@ -564,8 +494,6 @@ export default function () {
                       {!!player.team &&
                         Constants.IdiomaticTier[Constants.Prestige[player.team.tier]]}
                     </td>
-                    <td className="text-center">{Util.formatCurrency(player.cost)}</td>
-                    <td className="text-center">{Util.formatCurrency(player.wages)}/wk</td>
                     <td className="text-center">{player.transferListed ? 'Yes' : 'No'}</td>
                   </tr>
                 ))}

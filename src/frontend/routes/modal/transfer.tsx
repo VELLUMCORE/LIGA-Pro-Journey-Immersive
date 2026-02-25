@@ -15,10 +15,9 @@ import { useLocation } from 'react-router-dom';
 import { Bot, Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
-import { useTranslation } from '@liga/frontend/hooks';
 import { Image } from '@liga/frontend/components';
 import { XPBar } from '@liga/frontend/components/player-card';
-import { FaBan, FaCheck, FaPiggyBank, FaTag, FaWallet } from 'react-icons/fa';
+import { FaBan, FaCheck } from 'react-icons/fa';
 
 /** @enum */
 enum Tab {
@@ -27,10 +26,13 @@ enum Tab {
 }
 
 /** @type {Player} */
-type Player = Awaited<ReturnType<typeof api.players.find<typeof Eagers.player>>>;
+type Player = (NonNullable<Awaited<ReturnType<typeof api.players.find<typeof Eagers.player>>>> & {
+  careerStints?: Array<{ teamId: number | null; startedAt: Date; endedAt: Date | null }>;
+}) | null;
 
 /** @type {Transfer} */
 type Transfer = Awaited<ReturnType<typeof api.transfers.all<typeof Eagers.transfer>>>[number];
+
 
 const TransferStatusBadgeColor: Record<number, string> = {
   [Constants.TransferStatus.PLAYER_ACCEPTED]: 'badge-success',
@@ -50,7 +52,6 @@ function fetchTransfers(playerId: number) {
 
 export default function TransferModal() {
   const location = useLocation();
-  const t = useTranslation('windows');
   const { state } = React.useContext(AppStateContext);
 
   const [activeTab, setActiveTab] = React.useState<Tab>(Tab.PAST_OFFERS);
@@ -66,10 +67,13 @@ export default function TransferModal() {
 
     api.players
       .find({
-        ...Eagers.player,
+        include: {
+          ...Eagers.player.include,
+          careerStints: true,
+        },
         where: { id: playerId },
       })
-      .then(setPlayer);
+      .then((foundPlayer) => setPlayer(foundPlayer ?? undefined));
 
     fetchTransfers(playerId).then(setTransfers);
   }, []);
@@ -91,6 +95,140 @@ export default function TransferModal() {
     );
   }, [transfers, isUserPlayer]);
 
+  const [majorWinCount, setMajorWinCount] = React.useState(0);
+  const [honors, setHonors] = React.useState<
+    Record<string, { count: number; seasons: number[]; tierSlug: string; federationSlug: string }>
+  >({});
+
+  React.useEffect(() => {
+    if (!player) return;
+
+    const championAwards = [
+      ...Constants.Awards.filter((award) => award.type === Constants.AwardType.CHAMPION).map(
+        (award) => award.target,
+      ),
+      Constants.TierSlug.MAJOR_CHAMPIONS_STAGE,
+    ];
+
+    api.competitions
+      .all<{
+        include: {
+          competitors: true;
+          federation: true;
+          tier: {
+            include: {
+              league: true;
+            };
+          };
+          matches: {
+            include: {
+              competitors: true;
+              players: {
+                select: { id: true };
+              };
+            };
+          };
+        };
+      }>({
+        where: {
+          status: Constants.CompetitionStatus.COMPLETED,
+          tier: {
+            slug: { in: championAwards },
+          },
+        },
+        include: {
+          competitors: true,
+          federation: true,
+          tier: {
+            include: {
+              league: true,
+            },
+          },
+          matches: {
+            include: {
+              competitors: true,
+              players: {
+                select: { id: true },
+              },
+            },
+          },
+        },
+        orderBy: { season: 'desc' },
+      })
+      .then((competitions) => {
+        const stints = player.careerStints ?? [];
+
+        const awarded = competitions.filter((competition) => {
+          const championshipMatch = competition.matches.reduce<(typeof competition.matches)[number] | null>(
+            (latest, match) => {
+              if (!latest || match.date > latest.date) return match;
+              return latest;
+            },
+            null,
+          );
+
+          if (!championshipMatch) return false;
+
+          let winnerTeamId = competition.competitors.find((c) => c.position === 1)?.teamId;
+          if (!winnerTeamId && championshipMatch.competitors.length >= 2) {
+            const ordered = [...championshipMatch.competitors].sort(
+              (a, b) => (b.score ?? 0) - (a.score ?? 0),
+            );
+            winnerTeamId = ordered[0]?.teamId;
+          }
+          if (!winnerTeamId) return false;
+
+          const championshipDate = new Date(championshipMatch.date);
+          const wasOnWinnerViaStint = stints.some((stint) => {
+            if (stint.teamId !== winnerTeamId) return false;
+
+            const startedAt = new Date(stint.startedAt);
+            startedAt.setHours(0, 0, 0, 0);
+
+            const endedAt = stint.endedAt ? new Date(stint.endedAt) : null;
+            if (endedAt) endedAt.setHours(23, 59, 59, 999);
+
+            return startedAt <= championshipDate && (!endedAt || endedAt >= championshipDate);
+          });
+
+          const everOnWinnerTeam = stints.some((stint) => stint.teamId === winnerTeamId);
+          const appearedInCompetition = competition.matches.some((match) =>
+            match.players.some((p) => p.id === player.id),
+          );
+
+          return (
+            wasOnWinnerViaStint ||
+            everOnWinnerTeam ||
+            (stints.length === 0 && (appearedInCompetition || player.teamId === winnerTeamId))
+          );
+        });
+
+        setMajorWinCount(
+          awarded.filter((c) => c.tier.slug === Constants.TierSlug.MAJOR_CHAMPIONS_STAGE).length,
+        );
+
+        const grouped = awarded.reduce<
+          Record<string, { count: number; seasons: number[]; tierSlug: string; federationSlug: string }>
+        >((acc, competition) => {
+          const key = `${competition.tier.slug}__${competition.federation.slug}`;
+          if (!acc[key]) {
+            acc[key] = {
+              count: 0,
+              seasons: [],
+              tierSlug: competition.tier.slug,
+              federationSlug: competition.federation.slug,
+            };
+          }
+
+          acc[key].count += 1;
+          acc[key].seasons.push(competition.season);
+          return acc;
+        }, {});
+
+        setHonors(grouped);
+      });
+  }, [player]);
+
   if (!player) {
     return (
       <main className="h-screen w-screen">
@@ -103,48 +241,12 @@ export default function TransferModal() {
 
   return (
     <main className="divide-base-content/10 flex h-screen w-screen flex-col divide-y">
-      {/* HEADER: PLAYER OVERVIEW */}
-      <header className="stats bg-base-200 w-full grid-cols-3 rounded-none">
-        <section className="stat">
-          <figure className="stat-figure text-secondary">
-            <FaWallet className="size-8" />
-          </figure>
-          <header className="stat-title">Wages</header>
-          <aside className="stat-value text-secondary">
-            {Util.formatCurrency(player.wages, { notation: 'compact' })}
-          </aside>
-          <footer className="stat-desc">Per Week</footer>
-        </section>
-
-        <section className="stat">
-          <figure className="stat-figure text-primary">
-            <FaTag className="size-8" />
-          </figure>
-          <header className="stat-title">Transfer Value</header>
-          <aside className="stat-value text-primary">
-            {Util.formatCurrency(player.cost, { notation: 'compact' })}
-          </aside>
-        </section>
-
-        <section className="stat">
-          <figure className="stat-figure">
-            <FaPiggyBank className="size-8" />
-          </figure>
-          <header className="stat-title">Your Cash</header>
-          <aside className="stat-value">
-            {Util.formatCurrency(state.profile.team?.earnings ?? 0, {
-              notation: 'compact',
-            })}
-          </aside>
-        </section>
-      </header>
-
       {/* PLAYER CARD */}
       <section className="flex">
-        <figure className="center w-1/5 gap-2 p-2">
+        <figure className="border-base-content/10 flex h-[246px] w-1/5 items-end justify-center overflow-hidden border-b p-0">
           <Image
             src={player.avatar || 'resources://avatars/empty.png'}
-            className="h-auto w-full"
+            className="mt-auto h-[390px] w-auto max-w-none object-contain"
           />
         </figure>
 
@@ -154,7 +256,7 @@ export default function TransferModal() {
               <th>Name</th>
               <th>Country</th>
               <th>Team</th>
-              <th>Potential</th>
+              <th>Age</th>
             </tr>
           </thead>
 
@@ -175,30 +277,58 @@ export default function TransferModal() {
                   'Free Agent'
                 )}
               </td>
-              <td>
-                <figure className="rating gap-1">
-                  {[...Array(Constants.Prestige.length)].map((_, idx) => (
-                    <span
-                      key={idx}
-                      className="mask mask-star bg-yellow-500"
-                      aria-current={idx + 1 <= player.prestige + 1}
-                    />
-                  ))}
-                </figure>
-              </td>
+              <td>{player.age ? `${player.age} years` : 'N/A'}</td>
             </tr>
           </tbody>
 
           <thead>
             <tr>
-              <th colSpan={4}>Stats</th>
+              <th colSpan={3}>Stats</th>
+              <th className="text-right">
+                {majorWinCount > 0 && (
+                  <span className="badge border-yellow-300 bg-yellow-500/20 px-4 py-3 font-semibold text-yellow-200">
+                    {majorWinCount}x Major winner
+                  </span>
+                )}
+              </th>
             </tr>
           </thead>
 
           <tbody>
-            <XPBar title="Total XP" value={Bot.Exp.getTotalXP(player.xp)} max={100} />
+            <tr>
+              <td colSpan={4} className="px-4 py-2">
+                <XPBar
+                  className="w-full"
+                  title="Total XP"
+                  value={Bot.Exp.getTotalXP(player.xp)}
+                  max={100}
+                />
+              </td>
+            </tr>
           </tbody>
         </table>
+      </section>
+
+
+      <section className="border-base-content/10 flex min-h-12 items-center gap-4 border-t px-4 py-2">
+        {Object.keys(honors).length === 0 && <span className="text-sm opacity-60">No honors yet.</span>}
+        {Object.values(honors).map((honor) => {
+          const seasonsList = [...honor.seasons]
+            .sort((a, b) => a - b)
+            .map((season) => `Season ${season}`)
+            .join(', ');
+
+          return (
+            <div key={`${honor.tierSlug}__${honor.federationSlug}`} className="tooltip flex items-center gap-2" data-tip={seasonsList}>
+              <Image
+                alt={honor.tierSlug}
+                className="h-12 w-12 object-contain"
+                src={Util.getCompetitionLogo(honor.tierSlug, honor.federationSlug)}
+              />
+              <span className="text-base font-bold">x{honor.count}</span>
+            </div>
+          );
+        })}
       </section>
 
       {/* TAB BAR (Player Career Only: REVIEW_OFFERS + PAST_OFFERS) */}
