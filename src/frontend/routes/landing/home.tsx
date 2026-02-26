@@ -118,7 +118,7 @@ export default function () {
       </nav>
       <footer className="w-full px-2">
         <p>
-          <small>LIGA: Pro Journey - Beta 0.1</small>
+          <small>{'v' + state.appInfo?.version}</small>
         </p>
       </footer>
     </main>
