@@ -1,15 +1,15 @@
 {
   "name": "liga",
   "productName": "LIGA Pro Journey",
-  "version": "3.0.0-beta.73",
-  "description": "An immersive CS:GO Esports Simulator",
+  "version": "alpha-0.1.0",
+  "description": "Full revamp mod for LIGA Esports Manager",
   "main": ".webpack/main",
-  "author": "Steve Rivera",
+  "author": "Rxpev",
   "license": "BUSL-1.1",
   "homepage": "https://playliga.gg",
   "repository": {
     "type": "git",
-    "url": "https://github.com/playliga/prototype.git"
+    "url": "https://github.com/rxpev/LIGA-Pro-Journey.git"
   },
   "bugs": {
     "url": "https://github.com/playliga/prototype/issues"
