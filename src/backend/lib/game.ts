@@ -232,21 +232,36 @@ export function getGameExecutable(game: string, rootPath: string | null) {
  * @function
  */
 export async function getGameLogFile(game: string, rootPath: string) {
-  // Decide base log directory based only on game + rootPath
-  const basename = path.basename(rootPath).toLowerCase();
+  const basePaths = [
+    path.join(rootPath, Constants.GameSettings.LOGS_DIR),
+    path.join(rootPath, Constants.GameSettings.CSGO_GAMEDIR, Constants.GameSettings.LOGS_DIR),
+    path.join(
+      rootPath,
+      Constants.GameSettings.CSGO_BASEDIR,
+      Constants.GameSettings.CSGO_GAMEDIR,
+      Constants.GameSettings.LOGS_DIR,
+    ),
+  ];
 
   let basePath = '';
-  if (basename === 'csgo') basePath = path.join(rootPath, Constants.GameSettings.LOGS_DIR);
-  else if (basename === 'csgo-ds') basePath = path.join(rootPath, 'csgo', Constants.GameSettings.LOGS_DIR);
-  else basePath = path.join(rootPath, Constants.GameSettings.CSGO_BASEDIR, Constants.GameSettings.CSGO_GAMEDIR, Constants.GameSettings.LOGS_DIR);
 
-  log.info(`[getGameLogFile] game=${game}, rootPath=${rootPath}, basePath=${basePath}`);
+  for (const candidate of basePaths) {
+    try {
+      await fs.promises.access(candidate, fs.constants.F_OK);
+      basePath = candidate;
+      break;
+    } catch (_) {
+      // try next candidate
+    }
+  }
 
-  // bail early if the logs path does not exist
-  try {
-    await fs.promises.access(basePath, fs.constants.F_OK);
-  } catch (_) {
-    log.warn(`[getGameLogFile] logs path does not exist: ${basePath}`);
+  log.info(
+    `[getGameLogFile] game=${game}, rootPath=${rootPath}, basePath=${basePath || 'N/A'}, tried=${basePaths.join(' | ')}`,
+  );
+
+  // bail early if no logs path exists
+  if (!basePath) {
+    log.warn(`[getGameLogFile] logs path does not exist for any candidate: ${basePaths.join(' | ')}`);
     return '';
   }
 
@@ -304,6 +319,7 @@ export class Server {
   private faceitRoom: any;
   private faceitSides?: Record<number, "t" | "ct">;
   private faceitUserSide?: "t" | "ct";
+  private clientLaunchedViaSteam: boolean;
 
   public getFaceitSides() {
     return this.faceitSides;
@@ -364,6 +380,7 @@ export class Server {
     this.settings = Util.loadSettings(profile.settings);
     this.scorebotEvents = [];
     this.spectating = Boolean(spectating);
+    this.clientLaunchedViaSteam = false;
 
     // handle game override
     if (gameOverride) {
@@ -534,6 +551,15 @@ export class Server {
   }
 
   /**
+   * Resolves dedicated server root path.
+   *
+   * @function
+   */
+  private getDedicatedServerRoot() {
+    return this.settings.general.dedicatedServerPath || 'E:/steamcmd/csgo-ds';
+  }
+
+  /**
    * Cleans up processes and other things after
    * closing the game server or client.
    *
@@ -552,10 +578,28 @@ export class Server {
       this.log.warn(error);
     }
 
+    const restorePath = this.settings.general.game === Constants.Game.CSGO
+      ? path.join(this.getDedicatedServerRoot(), this.gameDir)
+      : (this.settings.general.gamePath
+        ? path.join(this.settings.general.gamePath, this.baseDir, this.gameDir)
+        : '');
+
+    if (!restorePath) {
+      this.log.warn('Skipping file restore because no restore path is configured');
+      return;
+    }
+
     // restore files
-    return FileManager.restore(
-      path.join(this.settings.general.gamePath, this.baseDir, this.gameDir),
-    );
+    try {
+      return await FileManager.restore(restorePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code === 'EBUSY') {
+        this.log.warn(`Restore skipped due to locked files (server still using plugins): ${restorePath}`);
+        return;
+      }
+
+      throw error;
+    }
   }
 
   /**
@@ -565,7 +609,7 @@ export class Server {
  */
   private async generateBotConfig() {
 
-    const baseDir = path.join(this.settings.general.dedicatedServerPath, this.gameDir);
+    const baseDir = path.join(this.getDedicatedServerRoot(), this.gameDir);
     const original = path.join(baseDir, this.botConfigFile); // e.g. "botprofile.db"
     const template = await fs.promises.readFile(original, 'utf8');
     const [home, away] = this.competitors;
@@ -825,10 +869,9 @@ End\n
   * @function
   */
   private async generateServerConfig() {
-    const dedicatedDir = this.settings.general.dedicatedServerPath;
-    if (!dedicatedDir) {
-      this.log.warn('No dedicatedServerPath set, skipping server.cfg / liga-bots.cfg generation');
-      return;
+    const dedicatedDir = this.getDedicatedServerRoot();
+    if (!this.settings.general.dedicatedServerPath) {
+      this.log.warn(`No dedicatedServerPath set, using fallback for cfg generation: ${dedicatedDir}`);
     }
 
     const prisma = DatabaseClient.prisma;
@@ -1109,21 +1152,19 @@ End\n
    *
    * @function
    */
-  private launchClientCSGO() {
+  private async launchClientCSGO() {
+    this.clientLaunchedViaSteam = false;
+
     const defaultArgs = [
       '-novid',
       '+connect',
       `${this.getLocalIP()}:${Constants.GameSettings.RCON_PORT}`,
     ];
 
-    const fixedSteamPath = path.join(
-      this.settings.general.gamePath,
-      Constants.GameSettings.CSGO_BASEDIR,
-    );
-
     defaultArgs.unshift('-insecure');
 
     if (is.osx()) {
+      this.clientLaunchedViaSteam = true;
       gameClientProcess = spawn(
         'open',
         [
@@ -1134,25 +1175,70 @@ End\n
         { shell: true },
       );
     } else {
-      gameClientProcess = spawn(
-        Constants.GameSettings.CSGO_EXE,
-        [
+      const resolvedSteamPath = this.settings.general.steamPath || await discoverSteamPath();
+      let gameLibrary = this.settings.general.gamePath;
+
+      if (!gameLibrary) {
+        try {
+          gameLibrary = await discoverGamePath(this.settings.general.game, resolvedSteamPath || undefined);
+          this.settings.general.gamePath = gameLibrary;
+        } catch (_) {
+          // fallback to Steam launch below
+        }
+      }
+
+      if (gameLibrary) {
+        const gameInstallPath = path.join(gameLibrary, Constants.GameSettings.CSGO_BASEDIR);
+        const gameExecutable = path.join(gameInstallPath, Constants.GameSettings.CSGO_EXE);
+
+        try {
+          await fs.promises.access(gameExecutable, fs.constants.F_OK);
+          gameClientProcess = spawn(
+            gameExecutable,
+            [
+              ...defaultArgs,
+              ...this.userArgs,
+            ],
+            { cwd: gameInstallPath },
+          );
+        } catch (_) {
+          this.log.warn(`CS:GO executable not found at: ${gameExecutable}`);
+        }
+      }
+
+      if (!gameClientProcess) {
+        const steamExecutable = resolvedSteamPath
+          ? path.join(resolvedSteamPath, Constants.GameSettings.STEAM_EXE)
+          : null;
+        const steamArgs = [
           '-applaunch',
           Constants.GameSettings.CSGO_APPID.toString(),
           ...defaultArgs,
           ...this.userArgs,
-        ],
-        { cwd: fixedSteamPath },
-      );
+        ];
+
+        if (steamExecutable) {
+          try {
+            await fs.promises.access(steamExecutable, fs.constants.F_OK);
+            this.clientLaunchedViaSteam = true;
+            gameClientProcess = spawn(steamExecutable, steamArgs);
+          } catch (_) {
+            this.log.warn(`Steam executable not found at: ${steamExecutable}`);
+          }
+        }
+      }
+
+      if (!gameClientProcess) {
+        throw new Error('Unable to launch CS:GO client. Neither csgo.exe nor steam.exe could be started.');
+      }
     }
 
-    gameClientProcess.on('close', this.cleanup.bind(this));
     this.log.debug(gameClientProcess.spawnargs);
     return Promise.resolve();
   }
 
   private launchServerCSGO() {
-    const serverRoot = this.settings.general.dedicatedServerPath;
+    const serverRoot = this.getDedicatedServerRoot();
     const serverExe = path.join(serverRoot, 'srcds.exe');
     const serverCfg = 'server.cfg';
 
@@ -1181,7 +1267,8 @@ End\n
 
     const srcdsCommand = `"${serverExe}" ${args.join(' ')}`;
 
-    const cmdString = `E: && cd /d "${path.join(
+    const serverDrive = path.parse(serverRoot).root.replace(/[\\/]+$/, '');
+    const cmdString = `${serverDrive} && cd /d "${path.join(
       serverRoot,
       'csgo',
     )}" && ${srcdsCommand}`;
@@ -1217,8 +1304,7 @@ End\n
     // decide where to copy files to
     // if game is CS:GO, use dedicated server path instead of client path
     const isDedicated = this.settings.general.game === Constants.Game.CSGO;
-    const dedicatedServerPath =
-      this.settings.general.dedicatedServerPath || 'E:/steamcmd/csgo-ds'; // fallback
+    const dedicatedServerPath = this.getDedicatedServerRoot();
 
     const to = isDedicated
       ? path.join(dedicatedServerPath, 'csgo')
@@ -1261,6 +1347,27 @@ End\n
    * @function
    */
   public async start(): Promise<void> {
+    if (this.settings.general.game === Constants.Game.CSGO && !this.settings.general.dedicatedServerPath) {
+      try {
+        this.settings.general.dedicatedServerPath = await discoverDedicatedServerPath(
+          this.settings.general.steamPath || undefined,
+        );
+      } catch (_) {
+        this.log.warn(`Falling back to default dedicated server path: ${this.getDedicatedServerRoot()}`);
+      }
+    }
+
+    if (this.settings.general.game === Constants.Game.CSGO && !this.settings.general.gamePath) {
+      try {
+        this.settings.general.gamePath = await discoverGamePath(
+          this.settings.general.game,
+          this.settings.general.steamPath || undefined,
+        );
+      } catch (_) {
+        this.log.warn('Unable to auto-detect gamePath for CS:GO client launch; Steam fallback will be used.');
+      }
+    }
+
     // 1) Prepare files / plugins / cfgs
     await this.prepare();
 
@@ -1287,13 +1394,17 @@ End\n
     // 4) now launch the client (after server is up)
     await this.launchClientCSGO();
 
-    // 5) Attach client process handlers (all games with a client)
+    // 5) Attach client process handlers
     if (gameClientProcess) {
       gameClientProcess.on('error', (error) => {
         this.log.error(error);
       });
 
-      gameClientProcess.on('close', this.cleanup.bind(this));
+      // Steam launcher processes can exit immediately after handoff to the game.
+      // Do not interpret that launcher exit as match shutdown.
+      if (!this.clientLaunchedViaSteam) {
+        gameClientProcess.on('close', this.cleanup.bind(this));
+      }
     }
 
     // 6) Start scorebot on the correct log file
@@ -1307,8 +1418,13 @@ End\n
       logRoot,
     );
 
-    this.log.info(`Scorebot watching log file: ${logFile}`);
+    if (!logFile) {
+      throw new Error(
+        `Unable to locate a game log file. Check that the server has written at least one .log file under ${logRoot}.`,
+      );
+    }
 
+    this.log.info(`Scorebot watching log file: ${logFile}`);
 
     this.scorebot = new Scorebot.Watcher(logFile);
 
