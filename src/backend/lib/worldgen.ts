@@ -3703,6 +3703,28 @@ function selectBenchVictim(params: {
   return lowerXp[0] ?? null;
 }
 
+async function enforceSingleStarterSniper(params: {
+  teamId: number;
+  keepStarterPlayerId: number;
+  date: Date;
+}) {
+  const { teamId, keepStarterPlayerId, date } = params;
+
+  await DatabaseClient.prisma.player.updateMany({
+    where: {
+      teamId,
+      starter: true,
+      id: { not: keepStarterPlayerId },
+      role: { in: ["SNIPER", "AWPER"] },
+    },
+    data: {
+      starter: false,
+      transferListed: true,
+      lastOfferAt: date,
+    },
+  });
+}
+
 async function reinstateBenchedPlayerAfterSale(params: {
   teamId: number;
   soldRole: string;
@@ -3846,6 +3868,7 @@ async function processNPCContractExtensions() {
       if (freeAgent) {
         const years = getTierContractYears(team.tier);
         const contractEnd = addYears(now, years);
+        const incomingRole = normalizeRole(freeAgent.role);
 
         await prisma.player.update({
           where: { id: freeAgent.id },
@@ -3856,6 +3879,26 @@ async function processNPCContractExtensions() {
             contractEnd,
           },
         });
+
+        if (incomingRole === "SNIPER") {
+          await enforceSingleStarterSniper({
+            teamId: team.id,
+            keepStarterPlayerId: freeAgent.id,
+            date: now,
+          });
+
+          team.players = (team.players || []).map((p) => {
+            if (p.id === freeAgent.id) {
+              return { ...p, starter: true, transferListed: false, lastOfferAt: null };
+            }
+
+            if (p.starter && normalizeRole(p.role) === "SNIPER") {
+              return { ...p, starter: false, transferListed: true, lastOfferAt: now };
+            }
+
+            return p;
+          });
+        }
 
         await prisma.transfer.create({
           data: {
@@ -4551,6 +4594,14 @@ export async function onTransferParse(entry: Calendar) {
       lastOfferAt: null,
     },
   });
+
+  if (role === "SNIPER") {
+    await enforceSingleStarterSniper({
+      teamId: transfer.from.id,
+      keepStarterPlayerId: transfer.target.id,
+      date: profile.date,
+    });
+  }
 
   await reinstateBenchedPlayerAfterSale({
     teamId: transfer.to.id,
