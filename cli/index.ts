@@ -19,12 +19,13 @@ import sandbox from './sandbox';
 import scraper from './scraper';
 import stats from './stats';
 import squads from './squads';
+import lobbies from './lobbies';
 import { Command } from 'commander';
 
 /** @constant */
 const COMMAND_MAP: Record<
   string,
-  typeof claude | typeof contracts | typeof sandbox | typeof scraper | typeof stats | typeof squads
+  typeof claude | typeof contracts | typeof sandbox | typeof scraper | typeof stats | typeof squads | typeof lobbies
 > = {
   claude,
   contracts,
@@ -32,6 +33,7 @@ const COMMAND_MAP: Record<
   scraper,
   stats,
   squads,
+  lobbies,
 };
 
 /**
