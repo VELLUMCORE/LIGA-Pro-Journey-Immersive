@@ -3664,16 +3664,76 @@ function ensureTeamFloorAndSniper(params: {
   return players.length >= minPlayers && countSnipers(players) >= 1;
 }
 
-function selectBenchVictim(params: {
+async function isUserBenchWorthyForReplacement(params: {
+  profile: any;
+  teamId: number;
+  now: Date;
+}) {
+  const { profile, teamId, now } = params;
+  const playerId = profile?.playerId;
+  if (!playerId || !teamId || profile?.teamId !== teamId) return false;
+
+  const teamTier =
+    profile?.teamId === teamId
+      ? profile?.team?.tier
+      : (await DatabaseClient.prisma.team.findFirst({ where: { id: teamId }, select: { tier: true } }))?.tier;
+
+  const tierSlug = getTeamTierSlug(teamTier);
+  if (!tierSlug) return false;
+
+  const S = Constants.PlayerContractSettings;
+  const benchMinMatches = S.BENCH_MIN_LEAGUE_MATCHES;
+  const benchKdMin = (S.BENCH_KD_MIN_BY_TIER as Record<string, number>)[tierSlug];
+
+  const activeStint = await DatabaseClient.prisma.careerStint.findFirst({
+    where: { playerId, endedAt: null, teamId },
+    orderBy: { startedAt: "desc" },
+    select: { startedAt: true },
+  });
+  const contractStart = activeStint?.startedAt ?? subDays(now, 365);
+
+  try {
+    const leagueRecent = await LeagueStats.computeLeagueLifetimeStats(
+      teamId,
+      playerId,
+      30,
+      contractStart,
+    );
+
+    const kd = leagueRecent.kdRatio ?? 0;
+    const matchesPlayed = leagueRecent.matchesPlayed ?? 0;
+    return matchesPlayed >= benchMinMatches && kd < benchKdMin;
+  } catch (_) {
+    return false;
+  }
+}
+
+async function selectBenchVictim(params: {
   teamPlayers: Array<{ id: number; role?: string | null; starter?: boolean; xp?: number | null }>;
+  teamId: number;
+  profile?: any;
+  now?: Date;
   incomingPlayerId: number;
   incomingRole: string;
   incomingXp: number;
 }) {
-  const { teamPlayers, incomingPlayerId, incomingRole, incomingXp } = params;
+  const { teamPlayers, teamId, profile, now, incomingPlayerId, incomingRole, incomingXp } = params;
+
+  const userId = profile?.playerId;
+  const userTeamId = profile?.teamId;
+  const userPlayer =
+    userId && userTeamId === teamId
+      ? teamPlayers.find((p) => p.id === userId)
+      : null;
+  const isUserStarter = !!userPlayer?.starter;
+  const userRole = normalizeRole(userPlayer?.role);
 
   // Hard rule for snipers: bench a starter sniper so teams don't field two starter snipers.
   if (incomingRole === "SNIPER") {
+    if (isUserStarter && userRole === "SNIPER") {
+      return userPlayer;
+    }
+
     const starterSnipers = teamPlayers
       .filter(
         (p) => p.starter && p.id !== incomingPlayerId && normalizeRole(p.role) === "SNIPER",
@@ -3686,6 +3746,29 @@ function selectBenchVictim(params: {
   let candidates = teamPlayers.filter(
     (p) => p.starter && p.id !== incomingPlayerId && normalizeRole(p.role) === incomingRole,
   );
+
+  if (isUserStarter && userRole === incomingRole) {
+    const benchWorthy = await isUserBenchWorthyForReplacement({
+      profile,
+      teamId,
+      now: now ?? new Date(),
+    });
+    const shouldBenchUser = benchWorthy || Chance.rollD2(5);
+
+    if (shouldBenchUser) {
+      return userPlayer;
+    }
+
+    const npcStarters = candidates
+      .filter((p) => p.id !== userPlayer.id)
+      .sort((a, b) => (a.xp ?? 0) - (b.xp ?? 0));
+
+    if (npcStarters.length) {
+      return npcStarters[0];
+    }
+
+    return userPlayer;
+  }
 
   // Hard rule for riflers: rifler must replace rifler.
   if (!candidates.length && incomingRole === "RIFLER") {
@@ -4096,6 +4179,8 @@ async function trySignNPCFreeAgent(params: {
 }) {
   const { from, date } = params;
 
+  const profile = await DatabaseClient.prisma.profile.findFirst(Eagers.profile);
+
   if (!Chance.rollD2(Constants.TransferSettings.PBX_NPC_FREE_AGENT_SIGN)) {
     return Promise.resolve(false);
   }
@@ -4157,8 +4242,11 @@ async function trySignNPCFreeAgent(params: {
   const target = sample(candidates);
   if (!target) return Promise.resolve(false);
 
-  const victim = selectBenchVictim({
+  const victim = await selectBenchVictim({
     teamPlayers: from.players as any,
+    teamId: from.id,
+    profile,
+    now: date,
     incomingPlayerId: target.id,
     incomingRole: normalizeRole(target.role),
     incomingXp: target.xp || 0,
@@ -4323,7 +4411,7 @@ export async function sendTransferOffer(
 
   if (to.players.length <= Constants.Application.SQUAD_MIN_LENGTH) return Promise.resolve();
 
-  const candidates = (to.players || [])
+  const preCandidates = (to.players || [])
     .filter((player) => player.id !== profile.playerId)
     .filter((player) => {
       const role = normalizeRole(player.role);
@@ -4346,23 +4434,32 @@ export async function sendTransferOffer(
 
       const weakestRoleXp = Math.min(...sameRoleFrom.map((p) => p.xp || 0), Number.MAX_SAFE_INTEGER);
       return (player.xp || 0) > weakestRoleXp || sameRoleFrom.length === 0;
-    })
-    .filter((player) => {
-      // destination must keep at least 5 players and at least one sniper after benching/replacement
-      const role = normalizeRole(player.role);
-      const victim = selectBenchVictim({
-        teamPlayers: from.players as any,
-        incomingPlayerId: player.id,
-        incomingRole: role,
-        incomingXp: player.xp || 0,
-      });
-
-      if (!victim) {
-        return false;
-      }
-
-      return ensureTeamFloorAndSniper({ players: from.players as any });
     });
+
+  const candidates: typeof preCandidates = [];
+  for (const player of preCandidates) {
+    // destination must keep at least 5 players and at least one sniper after benching/replacement
+    const role = normalizeRole(player.role);
+    const victim = await selectBenchVictim({
+      teamPlayers: from.players as any,
+      teamId: from.id,
+      profile,
+      now: profile.date,
+      incomingPlayerId: player.id,
+      incomingRole: role,
+      incomingXp: player.xp || 0,
+    });
+
+    if (!victim) {
+      continue;
+    }
+
+    if (!ensureTeamFloorAndSniper({ players: from.players as any })) {
+      continue;
+    }
+
+    candidates.push(player);
+  }
 
   if (!candidates.length) return Promise.resolve();
 
@@ -4549,8 +4646,11 @@ export async function onTransferParse(entry: Calendar) {
     return Promise.resolve();
   }
 
-  const victim = selectBenchVictim({
+  const victim = await selectBenchVictim({
     teamPlayers: fromTeam.players as any,
+    teamId: fromTeam.id,
+    profile,
+    now: profile.date,
     incomingPlayerId: transfer.target.id,
     incomingRole: role,
     incomingXp: transfer.target.xp || 0,
