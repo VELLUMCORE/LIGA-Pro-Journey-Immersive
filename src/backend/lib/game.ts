@@ -1192,6 +1192,7 @@ End\n
 
     const defaultArgs = [
       '-novid',
+      '-sv_allow_upload 1',
       '+connect',
       `${this.getLocalIP()}:${Constants.GameSettings.RCON_PORT}`,
     ];
@@ -1454,7 +1455,7 @@ End\n
     // If we attach too early, we can lock onto _001 and miss GAME_OVER from newer files.
     // So we sample for a short settle window and keep the latest active candidate.
     let logFile = '';
-    const logSelectionDeadline = Date.now() + (20 * 1000);
+    const logSelectionDeadline = Date.now() + (40 * 1000);
     let latestActiveCandidate = '';
 
     while (Date.now() < logSelectionDeadline) {
