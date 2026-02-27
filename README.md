@@ -79,7 +79,7 @@ Currently, my modification of LIGA is **only playable** on my setup. I am active
 - Team life as a player: squad hub, being benched/kicked, no transfer control ✅
 - Progression & XP gains for everyone (no manual “team training” UI) ✅
 - Role-specific gameplay mechanics (AWPer restrictions, IGL veto, Rifler as default) ✅
-- UI / UX cleanup: Inbox rewrite, Player DB lock-down & refactor, Sponsor backgrounding, remove simulation, adjust tournament formats ❌🔜
+- UI / UX cleanup: Inbox rewrite, Player DB lock-down & refactor, Sponsor backgrounding, remove simulation, adjust tournament formats ✅
 - Polish and balancing pass (offer frequency, ELO curves, XP curves, role value) ❌🔜
 
 ---
