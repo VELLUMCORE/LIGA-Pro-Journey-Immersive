@@ -231,7 +231,11 @@ export function getGameExecutable(game: string, rootPath: string | null) {
  * @param rootPath  The game's root directory.
  * @function
  */
-export async function getGameLogFile(game: string, rootPath: string) {
+export async function getGameLogFile(
+  game: string,
+  rootPath: string,
+  options?: { preferredPort?: number; minMtimeMs?: number },
+) {
   const basePaths = [
     path.join(rootPath, Constants.GameSettings.LOGS_DIR),
     path.join(rootPath, Constants.GameSettings.CSGO_GAMEDIR, Constants.GameSettings.LOGS_DIR),
@@ -255,8 +259,8 @@ export async function getGameLogFile(game: string, rootPath: string) {
     }
   }
 
-  log.info(
-    `[getGameLogFile] game=${game}, rootPath=${rootPath}, basePath=${basePath || 'N/A'}, tried=${basePaths.join(' | ')}`,
+  log.debug(
+    `[getGameLogFile] game=${game}, rootPath=${rootPath}, basePath=${basePath || 'N/A'}`,
   );
 
   // bail early if no logs path exists
@@ -274,11 +278,42 @@ export async function getGameLogFile(game: string, rootPath: string) {
     return '';
   }
 
-  const full = files[0].fullpath();
-  log.info(`[getGameLogFile] picked log: ${full}`);
+  const preferredPort = options?.preferredPort;
+  const minMtimeMs = options?.minMtimeMs || 0;
+  const byMtime = files.filter((file) => file.mtime.getTime() >= minMtimeMs);
+  const candidatesByPort = preferredPort
+    ? byMtime.filter((file) => new RegExp(`_${preferredPort}_`).test(file.name))
+    : [];
+  const candidates = candidatesByPort.length
+    ? candidatesByPort
+    : (byMtime.length ? byMtime : files);
+
+  const full = candidates[0].fullpath();
+  log.debug(
+    `[getGameLogFile] picked log: ${full} (total=${files.length}, filtered=${candidates.length})`,
+  );
   return full;
 }
 
+
+async function isLikelyClosedLogFile(filePath: string) {
+  try {
+    const stats = await fs.promises.stat(filePath);
+    const readSize = Math.min(2048, stats.size);
+    const handle = await fs.promises.open(filePath, 'r');
+
+    try {
+      const buffer = Buffer.alloc(readSize);
+      await handle.read(buffer, 0, readSize, stats.size - readSize);
+      const tail = buffer.toString('utf8');
+      return /Log file closed\s*$/.test(tail.trimEnd());
+    } finally {
+      await handle.close();
+    }
+  } catch (_) {
+    return false;
+  }
+}
 
 /**
  * Throws an exception if the specified game is running.
@@ -1410,17 +1445,53 @@ End\n
     // 6) Start scorebot on the correct log file
     const logRoot =
       this.settings.general.game === Constants.Game.CSGO
+        // Prefer dedicated server logs for CS:GO score parsing and
+        // fallback to game path if needed.
         ? (this.settings.general.dedicatedServerPath || this.settings.general.gamePath)
         : this.settings.general.gamePath;
 
-    const logFile = await getGameLogFile(
-      this.settings.general.game,
-      logRoot,
-    );
+    // CS:GO can rotate logs multiple times right after startup (_001 -> _002 -> _003).
+    // If we attach too early, we can lock onto _001 and miss GAME_OVER from newer files.
+    // So we sample for a short settle window and keep the latest active candidate.
+    let logFile = '';
+    const logSelectionDeadline = Date.now() + (20 * 1000);
+    let latestActiveCandidate = '';
+
+    while (Date.now() < logSelectionDeadline) {
+      const candidate = await getGameLogFile(
+        this.settings.general.game,
+        logRoot,
+        {
+          preferredPort: Constants.GameSettings.RCON_PORT,
+          // Avoid stale logs from previous sessions that can suppress GAME_OVER detection.
+          minMtimeMs: Date.now() - (5 * 60 * 1000),
+        },
+      );
+
+      if (!candidate) {
+        await Util.sleep(500);
+        continue;
+      }
+
+      const isClosed = await isLikelyClosedLogFile(candidate);
+
+      if (isClosed) {
+        this.log.debug(`Skipping closed log candidate: ${candidate}`);
+        await Util.sleep(500);
+        continue;
+      }
+
+      latestActiveCandidate = candidate;
+      await Util.sleep(500);
+    }
+
+    if (latestActiveCandidate) {
+      logFile = latestActiveCandidate;
+    }
 
     if (!logFile) {
       throw new Error(
-        `Unable to locate a game log file. Check that the server has written at least one .log file under ${logRoot}.`,
+        `Unable to locate an active game log file. Check that the server has written at least one .log file under ${logRoot}.`,
       );
     }
 
