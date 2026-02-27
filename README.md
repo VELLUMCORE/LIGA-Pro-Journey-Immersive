@@ -36,6 +36,32 @@ Play FACEIT to get recognized by Esports Organizations. Your journey from **Leve
 
 ---
 
+### **Realistic Database**
+The most realistic database for any Counter-Strike game ever. Compete alongside 321 teams with realistic roles, avatars and stats!
+
+<img width="1901" height="844" alt="image" src="https://github.com/user-attachments/assets/58f6a26b-d858-4acf-b6b3-37f799423006" />
+
+---
+
+### **Reworked Tournament Schedule**
+12 individual local ESEA leagues for each region that qualify to ESL Pro League.
+
+Alongside that, a RMR and Major system for for every region.
+
+
+<img width="1426" height="502" alt="image" src="https://github.com/user-attachments/assets/68abd024-bb1b-4d59-8d3c-67eff9dd4ebc" />
+
+---
+
+### **Contract System**
+The better you play the more likely the team you are playing for is going to want to keep you around. Of course, that applies the other way around too.
+
+**Your performance matters!**
+
+<img width="1590" height="573" alt="image" src="https://github.com/user-attachments/assets/de75c645-2427-41b1-8cf0-4a8193b4ea66" />
+
+---
+
 ### **Advanced Bot Behaviors (BetterBotsPlus)**
 Powered by my custom bot enhancer:
 - Smarter enemy desicions (ECO rounds, bots drop guns for each other and **much** more!) 
