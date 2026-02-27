@@ -162,9 +162,21 @@ export function IPCGenericHandler() {
       return Promise.resolve();
     }
 
-    // get the semver string from the what's new file
+    // grab a version marker from the what's new file
     const whatsNewContent = await fs.promises.readFile(whatsNewFile, 'utf8');
-    const [whatsNewVersion] = whatsNewContent.split('\n')[0].match(/(v.+)/g);
+    const whatsNewLines = whatsNewContent
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    // preferred format is a semver-like string (for example: v3.0.0-alpha.0)
+    // but also support headings like "### alpha 0.1.0"
+    const whatsNewVersionLine =
+      whatsNewLines.find((line) => /(v\d+\.\d+\.\d+([-.][\w.]+)?)/i.test(line)) ||
+      whatsNewLines.find((line) => /alpha\s*\d+(\.\d+)*/i.test(line)) ||
+      whatsNewLines[0] ||
+      'whats-new';
+    const whatsNewVersion = whatsNewVersionLine.replace(/^#+\s*/, '').trim();
 
     // grab last seen version
     const lastSeenVersionFilePath = path.join(app.getPath('userData'), 'LastSeenVersion');

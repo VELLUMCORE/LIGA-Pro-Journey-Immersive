@@ -2,7 +2,14 @@
 
 # LIGA: Pro Journey
 
-![](resources://markdown/whats-new/icon.png)
+<div style="position: relative; overflow: hidden; border-radius: 12px; padding: 12px 14px;">
+  <img
+    src="resources://markdown/whats-new/icon.png"
+    alt="LIGA: Pro Journey"
+    style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0.02; pointer-events: none;"
+  />
+
+<div style="position: relative; z-index: 1;">
 
 ### The long-awaited alpha version is here!
 
@@ -19,7 +26,7 @@ This version of LIGA: Pro Journey ships with a few core features that distinguis
 - FACEIT pug system
 - Many overhauled UI and UX systems
 - Contract system for every player!
-- Greatly immproved bot mechanics
+- Greatly improved bot mechanics
 
 For more detailed information check out the github page or the discord channel.
 
