@@ -22,8 +22,8 @@ const config: ForgeConfig = {
   buildIdentifier: 'alpha',
   packagerConfig: {
     asar: true,
-    appBundleId: 'gg.playliga.application',
-    appCopyright: 'Copyright © 2024 Steve Rivera',
+    appBundleId: 'gg.liga.pro',
+    appCopyright: 'Copyright © 2026 Rxpev',
     extraResource: [
       './src/backend/prisma/saves',
       './src/backend/prisma/migrations',
