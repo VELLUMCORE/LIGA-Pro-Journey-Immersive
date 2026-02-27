@@ -64,39 +64,31 @@ export function StatusBanner(props: StatusBannerProps) {
     return match;
   }, [error]);
 
+  const showSteamMissing =
+    error.code === Constants.ErrorCode.ENOENT && message === Constants.GameSettings.STEAM_EXE;
+  const showRunningError = error.code === Constants.ErrorCode.ERUNNING;
+  const showPluginsError = !!error.path?.includes('plugins');
+
+  if (!showSteamMissing && !showRunningError && !showPluginsError) {
+    return null;
+  }
+
   return (
     <section className="alert alert-warning flex h-8 justify-center rounded-none p-0">
       <FaExclamationTriangle />
-      {error.code === Constants.ErrorCode.ENOENT &&
-        message === Constants.GameSettings.STEAM_EXE && (
-          <p>
-            {message} {t('main.dashboard.gameNotDetected')}
-          </p>
-        )}
-
-      {error.code === Constants.ErrorCode.ENOENT && message === Constants.GameSettings.CSGO_EXE && (
-        <React.Fragment>
-          <p>{t('main.dashboard.csgoNotDetected')}</p>
-          <button
-            className="btn btn-neutral btn-sm rounded-none"
-            onClick={() => {
-              api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
-                target: '/markdown/' + message,
-              });
-            }}
-          >
-            {t('shared.details')}
-          </button>
-        </React.Fragment>
+      {showSteamMissing && (
+        <p>
+          {message} {t('main.dashboard.gameNotDetected')}
+        </p>
       )}
 
-      {error.code === Constants.ErrorCode.ERUNNING && (
+      {showRunningError && (
         <p>
           {message} {t('main.dashboard.runningError')}
         </p>
       )}
 
-      {!!error.path.includes('plugins') && <p>{t('main.dashboard.pluginsError')}</p>}
+      {showPluginsError && <p>{t('main.dashboard.pluginsError')}</p>}
     </section>
   );
 }
