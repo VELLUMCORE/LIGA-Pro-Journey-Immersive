@@ -48,6 +48,7 @@ type RecentMatch = {
   eloDelta?: number | null;
   scoreA: number | null;
   scoreB: number | null;
+  date?: string | Date | null;
 };
 
 type MatchPlayer = {
@@ -173,7 +174,16 @@ export default function Faceit(): JSX.Element {
 
     setElo(profileData.faceitElo);
     setLevel(profileData.faceitLevel);
-    setRecent(enrichedRecent);
+    const sortedRecent = [...enrichedRecent].sort((a, b) => {
+      const aTime = a.date ? new Date(a.date).getTime() : 0;
+      const bTime = b.date ? new Date(b.date).getTime() : 0;
+
+      // Primary: newest match date first. Secondary fallback: higher id first.
+      if (bTime !== aTime) return bTime - aTime;
+      return b.id - a.id;
+    });
+
+    setRecent(sortedRecent);
     setLifetime(profileData.lifetime || null);
     if (last20Stats) setLast20(last20Stats);
     setDaily(profileData.daily ?? null);
