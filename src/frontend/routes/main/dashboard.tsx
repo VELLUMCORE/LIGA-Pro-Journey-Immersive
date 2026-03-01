@@ -122,6 +122,11 @@ export default function () {
 
   const [dismissedNoTeamAdvanceWarning, setDismissedNoTeamAdvanceWarning] = React.useState(false);
 
+  const toDashboardTeamTierLabel = (tierSlug: Constants.TierSlug): string =>
+    tierSlug === Constants.TierSlug.LEAGUE_PRO
+      ? 'ESL Pro League'
+      : Constants.IdiomaticTier[tierSlug];
+
   const openPlayerTransferModal = React.useCallback((playerId: number) => {
     api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
       target: '/transfer',
@@ -632,14 +637,14 @@ export default function () {
             const [homeWorldRanking, awayWorldRanking] = worldRankings;
             const [homeSuffix, awaySuffix] = [home, away].map((competitor) => {
               if (!spotlight.competition.tier.groupSize || !userGroupCompetitors) {
-                return Constants.IdiomaticTier[Constants.Prestige[competitor.team.tier]];
+                return toDashboardTeamTierLabel(Constants.Prestige[competitor.team.tier]);
               }
 
               const idx = userGroupCompetitors.findIndex(
                 (a) => a.teamId === competitor.teamId,
               );
               if (idx === -1) {
-                return Constants.IdiomaticTier[Constants.Prestige[competitor.team.tier]];
+                return toDashboardTeamTierLabel(Constants.Prestige[competitor.team.tier]);
               }
 
               return Util.toOrdinalSuffix(idx + 1);

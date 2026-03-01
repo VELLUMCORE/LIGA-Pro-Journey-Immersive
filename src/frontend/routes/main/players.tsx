@@ -203,13 +203,18 @@ export default function () {
     [state.continents, selectedFederationId],
   );
 
+  const toPlayerTierLabel = (tierSlug: Constants.TierSlug): string =>
+    tierSlug === Constants.TierSlug.LEAGUE_PRO
+      ? 'ESL Pro League'
+      : Constants.IdiomaticTier[tierSlug];
+
   // massage team data to team selector data structure
   const teamSelectorData = React.useMemo(
     () =>
       Constants.Prestige.filter((_, prestigeIdx) =>
         Number.isInteger(selectedTierId) ? prestigeIdx === selectedTierId : true,
       ).map((prestige) => ({
-        label: Constants.IdiomaticTier[prestige],
+        label: toPlayerTierLabel(prestige),
         options: teams
           .filter((team) => team.tier === Constants.Prestige.findIndex((tier) => tier === prestige))
           .map((team) => ({
@@ -295,7 +300,7 @@ export default function () {
                   <option value="">Any</option>
                   {Constants.Prestige.map((prestige, prestigeId) => (
                     <option key={prestige} value={prestigeId}>
-                      {Constants.IdiomaticTier[prestige]}
+                      {toPlayerTierLabel(prestige)}
                     </option>
                   ))}
                 </select>
@@ -499,7 +504,7 @@ export default function () {
                     </td>
                     <td className="text-center">
                       {!!player.team &&
-                        Constants.IdiomaticTier[Constants.Prestige[player.team.tier]]}
+                        toPlayerTierLabel(Constants.Prestige[player.team.tier])}
                     </td>
                     <td className="text-center">{player.transferListed ? 'Yes' : 'No'}</td>
                   </tr>
