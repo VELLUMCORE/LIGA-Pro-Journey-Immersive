@@ -1273,6 +1273,56 @@ End\n
     return Promise.resolve();
   }
 
+  /**
+   * Waits for the server to create a fresh log file newer than the
+   * provided timestamp.
+   *
+   * @function
+   */
+  private async waitForLogFile(logRoot: string, markerTime: Date) {
+    const maxAttempts = 80;
+
+    for (let logsRetryNum = 0; logsRetryNum < maxAttempts; logsRetryNum++) {
+      this.log.debug('Waiting for new server log file (attempt #%d)...', logsRetryNum + 1);
+
+      const logFilePath = await getGameLogFile(
+        this.settings.general.game,
+        logRoot,
+        {
+          preferredPort: Constants.GameSettings.RCON_PORT,
+          minMtimeMs: markerTime.getTime(),
+        },
+      );
+
+      if (!logFilePath) {
+        await Util.sleep(500);
+        continue;
+      }
+
+      const logFileStat = await fs.promises.stat(logFilePath);
+
+      if (logFileStat.mtime <= markerTime) {
+        await Util.sleep(500);
+        continue;
+      }
+
+      const isClosed = await isLikelyClosedLogFile(logFilePath);
+
+      if (isClosed) {
+        this.log.debug(`Skipping closed log candidate: ${logFilePath}`);
+        await Util.sleep(500);
+        continue;
+      }
+
+      this.log.debug('Found %s!', logFilePath);
+      return logFilePath;
+    }
+
+    throw new Error(
+      `Could not find log file or one that is newer than ${markerTime.toString()}.`,
+    );
+  }
+
   private launchServerCSGO() {
     const serverRoot = this.getDedicatedServerRoot();
     const serverExe = path.join(serverRoot, 'srcds.exe');
@@ -1383,6 +1433,8 @@ End\n
    * @function
    */
   public async start(): Promise<void> {
+    const logWaitMarkerTime = new Date();
+
     if (this.settings.general.game === Constants.Game.CSGO && !this.settings.general.dedicatedServerPath) {
       try {
         this.settings.general.dedicatedServerPath = await discoverDedicatedServerPath(
@@ -1427,10 +1479,20 @@ End\n
       this.log.warn(error);
     }
 
-    // 4) now launch the client (after server is up)
+    // 4) Resolve active server log file before issuing +connect
+    const logRoot =
+      this.settings.general.game === Constants.Game.CSGO
+        // Prefer dedicated server logs for CS:GO score parsing and
+        // fallback to game path if needed.
+        ? (this.settings.general.dedicatedServerPath || this.settings.general.gamePath)
+        : this.settings.general.gamePath;
+
+    const logFile = await this.waitForLogFile(logRoot, logWaitMarkerTime);
+
+    // 5) now launch the client (after server log is ready)
     await this.launchClientCSGO();
 
-    // 5) Attach client process handlers
+    // 6) Attach client process handlers
     if (gameClientProcess) {
       gameClientProcess.on('error', (error) => {
         this.log.error(error);
@@ -1443,59 +1505,7 @@ End\n
       }
     }
 
-    // 6) Start scorebot on the correct log file
-    const logRoot =
-      this.settings.general.game === Constants.Game.CSGO
-        // Prefer dedicated server logs for CS:GO score parsing and
-        // fallback to game path if needed.
-        ? (this.settings.general.dedicatedServerPath || this.settings.general.gamePath)
-        : this.settings.general.gamePath;
-
-    // CS:GO can rotate logs multiple times right after startup (_001 -> _002 -> _003).
-    // If we attach too early, we can lock onto _001 and miss GAME_OVER from newer files.
-    // So we sample for a short settle window and keep the latest active candidate.
-    let logFile = '';
-    const logSelectionDeadline = Date.now() + (40 * 1000);
-    let latestActiveCandidate = '';
-
-    while (Date.now() < logSelectionDeadline) {
-      const candidate = await getGameLogFile(
-        this.settings.general.game,
-        logRoot,
-        {
-          preferredPort: Constants.GameSettings.RCON_PORT,
-          // Avoid stale logs from previous sessions that can suppress GAME_OVER detection.
-          minMtimeMs: Date.now() - (5 * 60 * 1000),
-        },
-      );
-
-      if (!candidate) {
-        await Util.sleep(500);
-        continue;
-      }
-
-      const isClosed = await isLikelyClosedLogFile(candidate);
-
-      if (isClosed) {
-        this.log.debug(`Skipping closed log candidate: ${candidate}`);
-        await Util.sleep(500);
-        continue;
-      }
-
-      latestActiveCandidate = candidate;
-      await Util.sleep(500);
-    }
-
-    if (latestActiveCandidate) {
-      logFile = latestActiveCandidate;
-    }
-
-    if (!logFile) {
-      throw new Error(
-        `Unable to locate an active game log file. Check that the server has written at least one .log file under ${logRoot}.`,
-      );
-    }
-
+    // 7) Start scorebot on the selected log file
     this.log.info(`Scorebot watching log file: ${logFile}`);
 
     this.scorebot = new Scorebot.Watcher(logFile);
@@ -1507,7 +1517,7 @@ End\n
       throw error;
     }
 
-    // 7) Push events into in-memory buffer
+    // 8) Push events into in-memory buffer
     this.scorebot.on(Scorebot.EventIdentifier.PLAYER_ASSISTED, (payload) =>
       this.scorebotEvents.push({ type: Scorebot.EventIdentifier.PLAYER_ASSISTED, payload }),
     );
@@ -1518,7 +1528,7 @@ End\n
       this.scorebotEvents.push({ type: Scorebot.EventIdentifier.ROUND_OVER, payload }),
     );
 
-    // 8) Resolve when GAME_OVER fires
+    // 9) Resolve when GAME_OVER fires
     return new Promise((resolve) => {
       this.scorebot.on(Scorebot.EventIdentifier.GAME_OVER, async (payload) => {
         // In CS:GO we delay + adjust score ordering for OT
