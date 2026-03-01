@@ -58,6 +58,11 @@ interface InitSaveResult {
   created: boolean;
 }
 
+interface SaveSchemaProbe {
+  hasMigrationsTable: boolean;
+  hasProfileTable: boolean;
+}
+
 /** @type {PrismaClientExtended} */
 type PrismaClientExtended = ReturnType<(typeof DatabaseClient)['clientExtensions']>;
 
@@ -165,11 +170,16 @@ export default class DatabaseClient {
    */
   public static async connect(id = activeId) {
     // return cached client if already connected to provided
-    // db otherwise dereference the existing one
+    // db and the underlying save still exists
     if (pool[id] && activeId === id) {
-      return pool[id].client;
-    } else {
-      delete pool[activeId];
+      try {
+        await fs.promises.access(pool[id].path, fs.constants.F_OK);
+        return pool[id].client;
+      } catch (_) {
+        await DatabaseClient.forget(id);
+      }
+    } else if (pool[activeId]) {
+      await DatabaseClient.disconnect();
     }
 
     // initialize the save file
@@ -281,8 +291,31 @@ export default class DatabaseClient {
    * @method
    */
   public static async disconnect() {
+    if (!pool[activeId]) {
+      return;
+    }
+
     await pool[activeId].client.$disconnect();
     delete pool[activeId];
+  }
+
+  /**
+   * Removes a cached client for a save id and disconnects it if needed.
+   *
+   * @param id The database id.
+   * @method
+   */
+  public static async forget(id: number) {
+    if (!pool[id]) {
+      return;
+    }
+
+    await pool[id].client.$disconnect();
+    delete pool[id];
+
+    if (activeId === id) {
+      activeId = 0;
+    }
   }
 
   /**
@@ -363,7 +396,23 @@ export default class DatabaseClient {
     // we build the file tree to the save file
     try {
       await fs.promises.access(newSavePath, fs.constants.F_OK);
-      return Promise.resolve({ path: newSavePath, created: false });
+
+      // Defensive guard: if a stale/corrupted save file exists (e.g. empty sqlite file),
+      // rebuild it from the root save to avoid runtime prisma errors on connect.
+      const schema = await DatabaseClient.probeSaveSchema(newSavePath);
+
+      if (schema.hasMigrationsTable && schema.hasProfileTable) {
+        return Promise.resolve({ path: newSavePath, created: false });
+      }
+
+      DatabaseClient.log.warn(
+        'Save %s is missing expected schema (migrations=%s, profile=%s). Rebuilding file...',
+        newSavePath,
+        schema.hasMigrationsTable,
+        schema.hasProfileTable,
+      );
+
+      await fs.promises.unlink(newSavePath);
     } catch (_) {
       await fs.promises.mkdir(path.dirname(newSavePath), { recursive: true });
     }
@@ -410,9 +459,17 @@ export default class DatabaseClient {
       DatabaseClient.log.debug('Migrating database %s...', targetDBPath),
     );
     const migrationsExisting = await new Promise<Array<PrismaMigration>>((resolve) =>
-      cnx.all('SELECT * FROM _prisma_migrations', (_, rows: Array<PrismaMigration>) =>
-        resolve(rows),
-      ),
+      cnx.all('SELECT * FROM _prisma_migrations', (error, rows: Array<PrismaMigration>) => {
+        if (error) {
+          DatabaseClient.log.warn(
+            'Failed to read _prisma_migrations for %s. Treating as no applied migrations.',
+            targetDBPath,
+          );
+          return resolve([]);
+        }
+
+        resolve(rows ?? []);
+      }),
     );
 
     // load up migration files
@@ -595,5 +652,40 @@ export default class DatabaseClient {
 
     this.log.info('Moving "%s" to "%s"', oldPath, newPath);
     return fs.promises.rename(oldPath, newPath);
+  }
+
+  /**
+   * Checks whether a save file contains core tables expected by the game.
+   *
+   * @param savePath The absolute path to the sqlite save file.
+   * @method
+   */
+  private static async probeSaveSchema(savePath: string): Promise<SaveSchemaProbe> {
+    const cnx = await new Promise<sqlite3.Database>((resolve) => {
+      const db = new sqlite3.Database(savePath, () => resolve(db));
+    });
+
+    try {
+      const tables = await new Promise<string[]>((resolve) =>
+        cnx.all(
+          `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('_prisma_migrations', 'Profile')`,
+          (error, rows: Array<{ name: string }>) => {
+            if (error) {
+              DatabaseClient.log.warn('Failed probing save schema for %s: %s', savePath, error);
+              return resolve([]);
+            }
+
+            resolve((rows ?? []).map((row) => row.name));
+          },
+        ),
+      );
+
+      return {
+        hasMigrationsTable: tables.includes('_prisma_migrations'),
+        hasProfileTable: tables.includes('Profile'),
+      };
+    } finally {
+      await new Promise<void>((resolve) => cnx.close(() => resolve()));
+    }
   }
 }

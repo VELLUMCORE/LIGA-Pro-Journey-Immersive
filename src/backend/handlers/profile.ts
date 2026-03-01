@@ -149,11 +149,13 @@ export default function registerProfileHandlers() {
     return saves.filter((save) => !!save && save.id !== 0);
   });
 
-  ipcMain.handle(Constants.IPCRoute.SAVES_DELETE, (_, id: number) => {
+  ipcMain.handle(Constants.IPCRoute.SAVES_DELETE, async (_, id: number) => {
     const dbFileName = Util.getSaveFileName(id);
     const dbPath = path.join(DatabaseClient.basePath, dbFileName);
 
     if (!fs.existsSync(dbPath)) return Promise.reject();
+
+    await DatabaseClient.forget(id);
     return fs.promises.unlink(dbPath);
   });
 
