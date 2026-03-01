@@ -1198,7 +1198,6 @@ End\n
 
     const defaultArgs = [
       '-novid',
-      '-sv_allow_upload 1',
       '+connect',
       `${this.getLocalIP()}:${Constants.GameSettings.RCON_PORT}`,
     ];
