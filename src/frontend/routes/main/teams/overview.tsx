@@ -281,7 +281,16 @@ export default function () {
                             className="mr-2 inline-block size-4"
                           />
                         )}
-                        <span>{opponent?.team.name || 'BYE'}</span>
+                        {!!opponent?.team && (
+                          <Link
+                            to={`/teams?teamId=${opponent.team.id}`}
+                            className="link-hover"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {opponent.team.name}
+                          </Link>
+                        )}
+                        {!opponent?.team && <span>BYE</span>}
                       </td>
                       <td className="w-3/12 truncate" title={competitionLabel}>
                         {competitionLabel}

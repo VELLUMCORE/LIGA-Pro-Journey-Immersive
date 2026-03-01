@@ -6,7 +6,7 @@
 import React from 'react';
 import { format } from 'date-fns';
 import { groupBy } from 'lodash';
-import { useOutletContext } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
@@ -251,7 +251,13 @@ export default function () {
                       {format(match.date, 'MM/dd')}
                     </td>
                     <td className="truncate text-right" title={home.team.name}>
-                      <span>{home.team.name}</span>
+                      <Link
+                        to={`/teams?teamId=${home.team.id}`}
+                        className="link-hover"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        {home.team.name}
+                      </Link>
                       <img src={home.team.blazon} className="ml-2 inline-block size-4" />
                     </td>
                     <td className="text-center">
@@ -269,7 +275,13 @@ export default function () {
                       {!!away && (
                         <>
                           <img src={away.team.blazon} className="mr-2 inline-block size-4" />
-                          <span>{away.team.name}</span>
+                          <Link
+                            to={`/teams?teamId=${away.team.id}`}
+                            className="link-hover"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {away.team.name}
+                          </Link>
                         </>
                       )}
                     </td>

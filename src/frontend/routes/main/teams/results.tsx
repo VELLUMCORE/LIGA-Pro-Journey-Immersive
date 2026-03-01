@@ -80,7 +80,7 @@ export default function () {
       ...(orderBy ? { orderBy } : {}),
       where: {
         status: Constants.MatchStatus.COMPLETED,
-        competitionId: { not: null },
+        competitionId: { not: null as null },
         matchType: { not: 'FACEIT_PUG' },
         competitors: {
           some: {
