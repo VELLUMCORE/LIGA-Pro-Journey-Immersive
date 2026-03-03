@@ -101,6 +101,57 @@ async function advanceOneDayFromFaceit(prisma: any, profileId: number) {
   await Engine.Runtime.Instance.start(1, settings.calendar.ignoreExits);
 }
 
+async function getFaceitLeaderboard(
+  prisma: any,
+  baseProfile: any,
+  fullPlayer: any,
+  limit = 10
+) {
+  const federationId = fullPlayer?.country?.continent?.federationId;
+  if (federationId == null) return [];
+
+  const regionalPlayers = await prisma.player.findMany({
+    where: {
+      country: {
+        continent: {
+          federationId,
+        },
+      },
+    },
+    include: {
+      country: {
+        include: {
+          continent: true,
+        },
+      },
+    },
+  });
+
+  const ranked = regionalPlayers
+    .map((player: any) => {
+      const playerElo =
+        player.id === baseProfile.playerId
+          ? baseProfile.faceitElo
+          : player.elo;
+
+      return {
+        playerId: player.id,
+        nickname: player.name || "Unknown",
+        countryCode: player.country?.code?.toLowerCase() || null,
+        faceitElo: playerElo,
+        faceitLevel: levelFromElo(playerElo),
+      };
+    })
+    .sort((a: any, b: any) => b.faceitElo - a.faceitElo)
+    .slice(0, limit)
+    .map((entry: any, index: number) => ({
+      rank: index + 1,
+      ...entry,
+    }));
+
+  return ranked;
+}
+
 // ------------------------------------------------------
 // Build minimal pseudo-match for Game(Server)
 // ------------------------------------------------------
@@ -203,20 +254,35 @@ export default function registerFaceitHandlers() {
   ipcMain.handle("faceit:getProfile", async () => {
     try {
       const prisma = await DatabaseClient.connect();
-      const profile = await prisma.profile.findFirst({
-        include: { player: true },
-      });
+      const profile = await prisma.profile.findFirst();
 
       if (!profile) throw new Error("No active profile found");
+
+      const fullPlayer = profile.playerId
+        ? await prisma.player.findFirst({
+          where: { id: profile.playerId },
+          include: {
+            country: {
+              include: {
+                continent: true,
+              },
+            },
+          },
+        })
+        : null;
 
       const recent = await getRecentMatches(profile.id);
       const lifetime = await computeLifetimeStats(profile.id, profile.playerId);
       const daily = await getFaceitDailyState(prisma, profile);
+      const leaderboard = fullPlayer
+        ? await getFaceitLeaderboard(prisma, profile, fullPlayer, 10)
+        : [];
       return {
         faceitElo: profile.faceitElo,
         faceitLevel: levelFromElo(profile.faceitElo),
         recent,
         lifetime,
+        leaderboard,
 
         daily: {
           playedToday: daily.playedToday,

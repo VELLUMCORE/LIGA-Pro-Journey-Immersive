@@ -17,6 +17,16 @@ import level7 from "../../../assets/faceit/7.png";
 import level8 from "../../../assets/faceit/8.png";
 import level9 from "../../../assets/faceit/9.png";
 import level10 from "../../../assets/faceit/10.png";
+import rank1 from "../../../assets/faceit/rank1.png";
+import rank2 from "../../../assets/faceit/rank2.png";
+import rank3 from "../../../assets/faceit/rank3.png";
+import rank4 from "../../../assets/faceit/rank4.png";
+import rank5 from "../../../assets/faceit/rank5.png";
+import rank6 from "../../../assets/faceit/rank6.png";
+import rank7 from "../../../assets/faceit/rank7.png";
+import rank8 from "../../../assets/faceit/rank8.png";
+import rank9 from "../../../assets/faceit/rank9.png";
+import rank10 from "../../../assets/faceit/rank10.png";
 import killsIcon from "../../../assets/faceit/kills.png";
 import deathsIcon from "../../../assets/faceit/deaths.png";
 import headshotIcon from "../../../assets/faceit/headshot.png";
@@ -35,6 +45,20 @@ export const LEVEL_IMAGES = [
   level8,
   level9,
   level10,
+];
+
+const RANK_IMAGES = [
+  null,
+  rank1,
+  rank2,
+  rank3,
+  rank4,
+  rank5,
+  rank6,
+  rank7,
+  rank8,
+  rank9,
+  rank10,
 ];
 
 // ---------------------------------------------------------------------------
@@ -67,6 +91,15 @@ type MatchRoomData = {
   expectedWinB: number;
   eloGain: number;
   eloLoss: number;
+};
+
+type LeaderboardPlayer = {
+  rank: number;
+  playerId: number;
+  nickname: string;
+  countryCode?: string | null;
+  faceitElo: number;
+  faceitLevel: number;
 };
 
 type DailyState = {
@@ -109,6 +142,7 @@ export default function Faceit(): JSX.Element {
   const [recent, setRecent] = useState<RecentMatch[]>([]);
   const [lifetime, setLifetime] = useState<any | null>(null);
   const [last20, setLast20] = useState<any | null>(null);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardPlayer[]>([]);
 
   const [loading, setLoading] = useState(true);
 
@@ -185,6 +219,7 @@ export default function Faceit(): JSX.Element {
 
     setRecent(sortedRecent);
     setLifetime(profileData.lifetime || null);
+    setLeaderboard(profileData.leaderboard || []);
     if (last20Stats) setLast20(last20Stats);
     setDaily(profileData.daily ?? null);
     setQueueError(null);
@@ -221,6 +256,23 @@ export default function Faceit(): JSX.Element {
   }, [state.profile]);
 
   const gameSlug = settingsAll.general.game;
+
+  const leaderboardRegionTitle = React.useMemo(() => {
+    const userCountryId = state.profile?.player?.countryId;
+    if (!userCountryId) return "REGIONAL RANKINGS";
+
+    const continent = (state.continents as any[]).find((entry) =>
+      (entry.countries || []).some((country: any) => country.id === userCountryId)
+    );
+
+    const code = String(continent?.code || "").toUpperCase();
+    if (code === "EU") return "EU RANKINGS";
+    if (code === "AS") return "ASIA RANKINGS";
+    if (code === "OC") return "OCE RANKINGS";
+    if (code === "NA" || code === "SA") return "AMERICAS RANKINGS";
+
+    return "REGIONAL RANKINGS";
+  }, [state.profile, state.continents]);
 
   useEffect(() => {
     (async () => {
@@ -400,6 +452,8 @@ export default function Faceit(): JSX.Element {
             recent={recent}
             lifetime={lifetime}
             last20={last20}
+            leaderboard={leaderboard}
+            leaderboardRegionTitle={leaderboardRegionTitle}
             onOpenRecent={(id) => setViewMatchId(id)}
             startQueue={startQueue}
             cancelQueue={cancelQueue}
@@ -474,6 +528,8 @@ interface NormalFaceitBodyProps {
   recent: RecentMatch[];
   lifetime: any | null;
   last20: any | null;
+  leaderboard: LeaderboardPlayer[];
+  leaderboardRegionTitle: string;
   onOpenRecent: (id: number) => void;
 
   startQueue: () => void;
@@ -496,6 +552,8 @@ function NormalFaceitBody({
   recent,
   lifetime,
   last20,
+  leaderboard,
+  leaderboardRegionTitle,
   onOpenRecent,
   startQueue,
   cancelQueue,
@@ -635,14 +693,13 @@ function NormalFaceitBody({
       {/* ------------------------------------------------------------------- */}
       {/* MATCHMAKING BUTTON */}
       {/* ------------------------------------------------------------------- */}
-      <div className="bg-[#0f0f0f] rounded-lg border border-[#ffffff15] flex flex-col">
+      <div className="bg-[#0f0f0f] rounded-lg border border-[#ffffff15] flex flex-col overflow-hidden">
         <div className="w-full bg-[#0c0c0c] py-3 flex justify-center items-center border-b border-[#ff7300]/40">
           <h2 className="text-lg font-bold">MATCHMAKING</h2>
         </div>
 
-        {/* Move button up using items-start + pt-20 */}
-        <div className="flex-1 flex items-start justify-center pt-20">
-          <div className="relative flex flex-col items-center">
+        <div className="flex flex-col gap-4 p-5">
+          <div className="relative flex flex-col items-center pt-6 pb-1">
             {activeMatch ? (
               <button
                 onClick={reopenMatchRoom}
@@ -693,6 +750,62 @@ function NormalFaceitBody({
                 ) : null}
               </>
             )}
+          </div>
+
+          <div className="bg-neutral-900/40 rounded-lg border border-[#ffffff10] overflow-hidden">
+            <div className="px-4 py-3 border-b border-[#ffffff10] bg-[#0c0c0c]/60">
+              <h3 className="text-sm font-bold tracking-wide text-center">{leaderboardRegionTitle}</h3>
+            </div>
+
+            <div className="max-h-[460px] overflow-y-auto">
+              {leaderboard.length === 0 ? (
+                <div className="px-4 py-4 text-sm opacity-60">No leaderboard data available.</div>
+              ) : (
+                <div className="divide-y divide-[#ffffff10]">
+                  {leaderboard.slice(0, 5).map((player) => (
+                    <div
+                      key={player.playerId}
+                      className="flex items-center justify-between px-4 py-1.5 bg-neutral-900/20"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xs text-neutral-300 w-6">#{player.rank}</span>
+                        <img
+                          src={LEVEL_IMAGES[player.faceitLevel] || LEVEL_IMAGES[1]}
+                          className="w-6 h-6"
+                        />
+                        {player.countryCode ? (
+                          <span className={`fp ${player.countryCode}`} />
+                        ) : (
+                          <span className="w-4" />
+                        )}
+                        <span className="text-sm font-semibold truncate">{player.nickname}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <img
+                          src={RANK_IMAGES[Math.min(10, Math.max(1, player.rank))] || RANK_IMAGES[10]}
+                          className="w-20 h-15"
+                        />
+                        <span className="text-sm font-bold text-white">{player.faceitElo}</span>
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="px-4 py-3 bg-neutral-900/20">
+                      <button
+                        onClick={() => undefined}
+                        className="relative w-full flex items-center justify-center rounded-md border border-[#ffffff20] px-3 py-2 text-sm font-semibold hover:border-[#ff7300]/70 hover:bg-neutral-800/70 transition"
+                      >
+                        <span className="text-white">
+                          OPEN FULL RANKINGS
+                        </span>
+                        <span className="absolute right-3 text-neutral-300">
+                          →
+                        </span>
+                      </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

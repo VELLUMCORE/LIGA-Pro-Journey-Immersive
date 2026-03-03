@@ -139,6 +139,14 @@ export default {
           kdRatio: number;
           hsPercent: number;
         };
+        leaderboard?: Array<{
+          rank: number;
+          playerId: number;
+          nickname: string;
+          countryCode?: string | null;
+          faceitElo: number;
+          faceitLevel: number;
+        }>;
         daily?: DailyState | null;
       }>,
     queue: () =>
