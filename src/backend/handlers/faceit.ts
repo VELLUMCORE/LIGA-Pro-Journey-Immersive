@@ -104,30 +104,45 @@ async function advanceOneDayFromFaceit(prisma: any, profileId: number) {
 async function getFaceitLeaderboard(
   prisma: any,
   baseProfile: any,
-  fullPlayer: any,
-  limit = 10
+  options?: {
+    federationId?: number;
+    countryCode?: string;
+    limit?: number;
+  }
 ) {
-  const federationId = fullPlayer?.country?.continent?.federationId;
-  if (federationId == null) return [];
+  const where: any = {};
 
-  const regionalPlayers = await prisma.player.findMany({
-    where: {
-      country: {
-        continent: {
-          federationId,
-        },
+  if (options?.federationId != null) {
+    where.country = {
+      continent: {
+        federationId: options.federationId,
       },
-    },
+    };
+  }
+
+  if (options?.countryCode) {
+    where.country = {
+      ...(where.country || {}),
+      code: options.countryCode.toUpperCase(),
+    };
+  }
+
+  const players = await prisma.player.findMany({
+    where,
     include: {
       country: {
         include: {
-          continent: true,
+          continent: {
+            include: {
+              federation: true,
+            },
+          },
         },
       },
     },
   });
 
-  const ranked = regionalPlayers
+  const rankedEntries = players
     .map((player: any) => {
       const playerElo =
         player.id === baseProfile.playerId
@@ -138,18 +153,20 @@ async function getFaceitLeaderboard(
         playerId: player.id,
         nickname: player.name || "Unknown",
         countryCode: player.country?.code?.toLowerCase() || null,
+        countryName: player.country?.name || null,
+        federationSlug: player.country?.continent?.federation?.slug || null,
         faceitElo: playerElo,
         faceitLevel: levelFromElo(playerElo),
       };
     })
-    .sort((a: any, b: any) => b.faceitElo - a.faceitElo)
-    .slice(0, limit)
-    .map((entry: any, index: number) => ({
-      rank: index + 1,
-      ...entry,
-    }));
+    .sort((a: any, b: any) => b.faceitElo - a.faceitElo);
 
-  return ranked;
+  const limited = typeof options?.limit === "number" ? rankedEntries.slice(0, options.limit) : rankedEntries;
+
+  return limited.map((entry: any, index: number) => ({
+    rank: index + 1,
+    ...entry,
+  }));
 }
 
 // ------------------------------------------------------
@@ -275,7 +292,10 @@ export default function registerFaceitHandlers() {
       const lifetime = await computeLifetimeStats(profile.id, profile.playerId);
       const daily = await getFaceitDailyState(prisma, profile);
       const leaderboard = fullPlayer
-        ? await getFaceitLeaderboard(prisma, profile, fullPlayer, 10)
+        ? await getFaceitLeaderboard(prisma, profile, {
+          federationId: fullPlayer?.country?.continent?.federationId,
+          limit: 10,
+        })
         : [];
       return {
         faceitElo: profile.faceitElo,
@@ -295,6 +315,72 @@ export default function registerFaceitHandlers() {
       log.error(err);
       throw err;
     }
+  });
+
+
+  ipcMain.handle("faceit:getLeaderboard", async (_event, args?: {
+    page?: number;
+    perPage?: number;
+    region?: "ALL" | "EUROPE" | "AMERICAS" | "ASIA" | "OCEANIA";
+    countryCode?: string;
+  }) => {
+    const prisma = await DatabaseClient.connect();
+    const profile = await prisma.profile.findFirst();
+    if (!profile) throw new Error("No active profile found");
+
+    const regionToFederationSlug: Record<string, string | null> = {
+      ALL: null,
+      EUROPE: Constants.FederationSlug.ESPORTS_EUROPA,
+      AMERICAS: Constants.FederationSlug.ESPORTS_AMERICAS,
+      ASIA: Constants.FederationSlug.ESPORTS_ASIA,
+      OCEANIA: Constants.FederationSlug.ESPORTS_OCE,
+    };
+
+    const rawRegion = String(args?.region || "ALL").toUpperCase();
+    const region = Object.keys(regionToFederationSlug).includes(rawRegion) ? rawRegion : "ALL";
+    const federationSlug = regionToFederationSlug[region];
+
+    let federationId: number | undefined;
+    if (federationSlug) {
+      const federation = await prisma.federation.findFirst({ where: { slug: federationSlug } });
+      federationId = federation?.id;
+    }
+
+    const countryCode = args?.countryCode ? String(args.countryCode).toUpperCase() : undefined;
+    const page = Math.max(1, Math.floor(Number(args?.page) || 1));
+    const perPage = Math.max(1, Math.floor(Number(args?.perPage) || 50));
+
+    const regionEntries = await getFaceitLeaderboard(prisma, profile, {
+      federationId,
+    });
+
+    const allEntries = countryCode
+      ? regionEntries.filter((entry: any) => entry.countryCode?.toUpperCase() === countryCode)
+      : regionEntries;
+
+    const countriesByCode = new Map<string, string>();
+    regionEntries.forEach((entry: any) => {
+      if (entry.countryCode) {
+        countriesByCode.set(entry.countryCode.toUpperCase(), entry.countryName || entry.countryCode.toUpperCase());
+      }
+    });
+
+    const total = allEntries.length;
+    const totalPages = total === 0 ? 0 : Math.ceil(total / perPage);
+    const offset = (page - 1) * perPage;
+
+    return {
+      entries: allEntries.slice(offset, offset + perPage),
+      page,
+      perPage,
+      total,
+      totalPages,
+      region,
+      countryCode: countryCode || null,
+      availableCountries: Array.from(countriesByCode.entries())
+        .map(([code, name]) => ({ code, name }))
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    };
   });
 
   // ------------------------------------------------------

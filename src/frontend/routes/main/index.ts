@@ -11,6 +11,7 @@ import Players from './players';
 import Squad from './squad';
 import Teams from './teams';
 import Faceit from "./faceit/faceit";
+import FaceitRankings from "./faceit/rankings";
 
 /**
  * Exports this module.
@@ -25,6 +26,7 @@ export default {
   Players,
   Squad,
   Faceit,
+  FaceitRankings,
 
   // composite routes
   Competitions,

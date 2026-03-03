@@ -151,6 +151,33 @@ export default {
       }>,
     queue: () =>
       ipcRenderer.invoke('faceit:queuePug') as Promise<any>,
+    leaderboard: (
+      page = 1,
+      perPage = 50,
+      filters?: { region?: "ALL" | "EUROPE" | "AMERICAS" | "ASIA" | "OCEANIA"; countryCode?: string | null },
+    ) =>
+      ipcRenderer.invoke("faceit:getLeaderboard", {
+        page,
+        perPage,
+        region: filters?.region || "ALL",
+        countryCode: filters?.countryCode || undefined,
+      }) as Promise<{
+        entries: Array<{
+          rank: number;
+          playerId: number;
+          nickname: string;
+          countryCode?: string | null;
+          faceitElo: number;
+          faceitLevel: number;
+        }>;
+        page: number;
+        perPage: number;
+        total: number;
+        totalPages: number;
+        region: "ALL" | "EUROPE" | "AMERICAS" | "ASIA" | "OCEANIA";
+        countryCode: string | null;
+        availableCountries: Array<{ code: string; name: string }>;
+      }>,
     startMatch: (
       room: {
         fakeRoomId: string;

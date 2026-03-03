@@ -32,6 +32,7 @@ import deathsIcon from "../../../assets/faceit/deaths.png";
 import headshotIcon from "../../../assets/faceit/headshot.png";
 import { Image } from "@liga/frontend/components";
 import { Constants, Util } from "@liga/shared";
+import { useNavigate } from "react-router-dom";
 
 export const LEVEL_IMAGES = [
   null,
@@ -47,7 +48,7 @@ export const LEVEL_IMAGES = [
   level10,
 ];
 
-const RANK_IMAGES = [
+export const RANK_IMAGES = [
   null,
   rank1,
   rank2,
@@ -93,7 +94,7 @@ type MatchRoomData = {
   eloLoss: number;
 };
 
-type LeaderboardPlayer = {
+export type LeaderboardPlayer = {
   rank: number;
   playerId: number;
   nickname: string;
@@ -567,6 +568,7 @@ function NormalFaceitBody({
   queueBlockMessage,
   queueError,
 }: NormalFaceitBodyProps) {
+  const navigate = useNavigate();
   // ALL-TIME
   const kills = lifetime ? lifetime.kills : 0;
   const deaths = lifetime ? lifetime.deaths : 0;
@@ -784,7 +786,7 @@ function NormalFaceitBody({
                       <div className="flex items-center gap-3">
                         <img
                           src={RANK_IMAGES[Math.min(10, Math.max(1, player.rank))] || RANK_IMAGES[10]}
-                          className="w-20 h-15"
+                          className="w-17 h-11"
                         />
                         <span className="text-sm font-bold text-white">{player.faceitElo}</span>
                       </div>
@@ -793,7 +795,14 @@ function NormalFaceitBody({
 
                   <div className="px-4 py-3 bg-neutral-900/20">
                       <button
-                        onClick={() => undefined}
+                        onClick={() =>
+                          navigate("/faceit/rankings", {
+                            state: {
+                              fromFaceitRankingsButton: true,
+                              leaderboardRegionTitle,
+                            },
+                          })
+                        }
                         className="relative w-full flex items-center justify-center rounded-md border border-[#ffffff20] px-3 py-2 text-sm font-semibold hover:border-[#ff7300]/70 hover:bg-neutral-800/70 transition"
                       >
                         <span className="text-white">

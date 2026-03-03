@@ -102,6 +102,10 @@ const routes = createMemoryRouter([
         path: '/faceit',
         element: <Routes.Main.Faceit />,
       },
+      {
+        path: '/faceit/rankings',
+        element: <Routes.Main.FaceitRankings />,
+      },
 
       // composite routes
       {
