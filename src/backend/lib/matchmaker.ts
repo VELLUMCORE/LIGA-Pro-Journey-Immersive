@@ -2,6 +2,11 @@ import type { PrismaClient, Player } from "@prisma/client";
 import { shuffle } from "lodash";
 import { levelFromElo } from "@liga/backend/lib/levels";
 
+type BotCandidate = Player & {
+  country: { code: string; continent: { federationId: number } };
+  team: null | { countryId: number; country: { continent: { federationId: number } } };
+};
+
 export interface MatchPlayer {
   id: number;
   name: string;
@@ -15,6 +20,7 @@ export interface MatchPlayer {
   teamId: number | null;
   queueId?: string;
   queueType?: "COUNTRY" | "TEAM" | "BOTH";
+  teamCountryId?: number | null;
 }
 
 export interface MatchRoom {
@@ -35,27 +41,43 @@ export class FaceitMatchmaker {
     targetElo: number,
     needed: number,
     federationId: number
-  ): Promise<(Player & { country: { code: string } })[]> {
+  ): Promise<BotCandidate[]> {
 
     let range = this.BASE_ELO_RANGE;
-    let bots: (Player & { country: { code: string } })[] = [];
+    let bots: BotCandidate[] = [];
 
     while (bots.length < needed && range <= 3000) {
-      bots = await prisma.player.findMany({
+      const candidates = await prisma.player.findMany({
         where: {
           userControlled: false,
           elo: {
             gte: targetElo - range,
             lte: targetElo + range,
           },
+        },
+        include: {
           country: {
-            continent: {
-              federationId,
+            include: {
+              continent: true,
+            },
+          },
+          team: {
+            include: {
+              country: {
+                include: {
+                  continent: true,
+                },
+              },
             },
           },
         },
-        include: { country: true },
-        take: needed * 5,
+        take: needed * 8,
+      });
+
+      bots = candidates.filter((bot) => {
+        const botFederationId =
+          bot.team?.country?.continent?.federationId ?? bot.country.continent.federationId;
+        return botFederationId === federationId;
       });
 
       if (bots.length >= needed) break;
@@ -113,9 +135,9 @@ export class FaceitMatchmaker {
     };
 
     const priority = [
-      findGroups((p) => (p.teamId ? `${p.countryId}:${p.teamId}` : null), "BOTH"),
+      findGroups((p) => (p.teamId ? `${p.teamCountryId ?? p.countryId}:${p.teamId}` : null), "BOTH"),
       findGroups((p) => (p.teamId ? `${p.teamId}` : null), "TEAM"),
-      findGroups((p) => `${p.countryId}`, "COUNTRY"),
+      findGroups((p) => `${p.teamCountryId ?? p.countryId}`, "COUNTRY"),
     ];
 
     let queueIndex = 1;
@@ -170,6 +192,19 @@ export class FaceitMatchmaker {
             },
           },
         },
+        team: {
+          include: {
+            country: {
+              include: {
+                continent: {
+                  include: {
+                    federation: true,
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     });
 
@@ -177,7 +212,9 @@ export class FaceitMatchmaker {
 
     const userDb = fullPlayer;
     const userElo = baseProfile.faceitElo;
-    const federationId = userDb.country.continent.federation.id;
+    const federationId =
+      userDb.team?.country?.continent?.federation?.id ??
+      userDb.country.continent.federation.id;
 
     // -------------------------------------------------
     // 3. Get bots in region & Elo range
@@ -244,7 +281,7 @@ export class FaceitMatchmaker {
     // -------------------------------------------------
 
     // Convert all bot objects into MatchPlayer
-    const convert = (b: Player): MatchPlayer => ({
+    const convert = (b: BotCandidate): MatchPlayer => ({
       id: b.id,
       name: b.name,
       xp: b.xp,
@@ -255,6 +292,7 @@ export class FaceitMatchmaker {
       userControlled: false,
       countryId: b.countryId,
       teamId: b.teamId,
+      teamCountryId: b.team?.countryId ?? null,
     });
 
     const userPlayer: MatchPlayer = {
@@ -268,6 +306,7 @@ export class FaceitMatchmaker {
       userControlled: true,
       countryId: userDb.countryId,
       teamId: userDb.teamId,
+      teamCountryId: userDb.team?.countryId ?? null,
     };
 
     const rawTeamA: MatchPlayer[] = [
