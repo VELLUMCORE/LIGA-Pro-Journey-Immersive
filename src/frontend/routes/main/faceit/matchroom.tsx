@@ -86,6 +86,15 @@ function getTeamAvgLevel(team: MatchPlayer[]): number {
   return levelFromElo(getTeamAvgElo(team));
 }
 
+function resolvePlayerLevel(player: Pick<MatchPlayer, "level" | "elo">): number {
+  if (Number.isInteger(player.level) && player.level >= 1 && player.level <= 10) {
+    return player.level;
+  }
+
+  const fallback = levelFromElo(player.elo);
+  return Math.max(1, Math.min(10, fallback));
+}
+
 function orderTeamForDisplay(team: MatchPlayer[]): MatchPlayer[] {
   if (!team.length) return team;
 
@@ -599,6 +608,7 @@ export default function MatchRoom({
                     const isQueued = !!queue && queue.size >= 2;
                     const showTop = isQueued && queue.index > 0;
                     const showBottom = isQueued && queue.index < queue.size - 1;
+                    const playerLevel = resolvePlayerLevel(p);
 
                     return (
                       <div
@@ -635,8 +645,9 @@ export default function MatchRoom({
                         <div className="flex items-center gap-2">
                           <span className="opacity-70">{p.elo}</span>
                           <img
-                            src={LEVEL_IMAGES[p.level]}
+                            src={LEVEL_IMAGES[playerLevel]}
                             className="w-8 h-8"
+                            alt={`Level ${playerLevel}`}
                           />
                         </div>
                       </div>
@@ -847,6 +858,7 @@ export default function MatchRoom({
                     const isQueued = !!queue && queue.size >= 2;
                     const showTop = isQueued && queue.index > 0;
                     const showBottom = isQueued && queue.index < queue.size - 1;
+                    const playerLevel = resolvePlayerLevel(p);
 
                     return (
                       <div
@@ -867,8 +879,9 @@ export default function MatchRoom({
                         <div className="flex items-center gap-2">
                           <span className="opacity-70">{p.elo}</span>
                           <img
-                            src={LEVEL_IMAGES[p.level]}
+                            src={LEVEL_IMAGES[playerLevel]}
                             className="w-8 h-8"
+                            alt={`Level ${playerLevel}`}
                           />
                         </div>
 
