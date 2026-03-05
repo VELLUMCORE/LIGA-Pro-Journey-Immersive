@@ -3,7 +3,7 @@
  */
 
 import { dialog, ipcMain } from "electron";
-import { add, addDays, differenceInDays, endOfDay, format, startOfDay } from "date-fns";
+import { add, addDays, differenceInDays, endOfDay, format, getISODay, startOfDay } from "date-fns";
 import { Prisma, Calendar } from "@prisma/client";
 import { DatabaseClient, Engine, WindowManager, Worldgen } from "@liga/backend/lib";
 import { Bot, Eagers, Constants, Util } from "@liga/shared";
@@ -160,10 +160,120 @@ async function onTickEnd(input: Calendar[], status?: Engine.LoopStatus) {
     data: { date: addDays(profile.date, 1).toISOString() },
   });
 
+  const isStartOfIsoWeek = getISODay(profile.date) === 1;
+  if (isStartOfIsoWeek) {
+    await simulateWeeklyNpcFaceitElo(DatabaseClient.prisma, profile.playerId);
+  }
+
   const mainWindow = WindowManager.get(Constants.WindowIdentifier.Main, false)?.webContents;
   if (mainWindow) mainWindow.send(Constants.IPCRoute.PROFILES_CURRENT, profile);
 
   return Promise.resolve();
+}
+
+function randomWeeklyFaceitDelta() {
+  // Max weekly movement is +/-50, biased toward +/-25 and +/-30.
+  const weightedDeltas: Array<{ delta: number; weight: number }> = [
+    { delta: -50, weight: 4 },
+    { delta: -40, weight: 6 },
+    { delta: -30, weight: 15 },
+    { delta: -25, weight: 18 },
+    { delta: -20, weight: 8 },
+    { delta: -10, weight: 6 },
+    { delta: 0, weight: 4 },
+    { delta: 10, weight: 6 },
+    { delta: 20, weight: 8 },
+    { delta: 25, weight: 18 },
+    { delta: 30, weight: 15 },
+    { delta: 40, weight: 6 },
+    { delta: 50, weight: 4 },
+  ];
+
+  const totalWeight = weightedDeltas.reduce((sum, entry) => sum + entry.weight, 0);
+  let roll = Math.random() * totalWeight;
+
+  for (const entry of weightedDeltas) {
+    roll -= entry.weight;
+    if (roll <= 0) {
+      return entry.delta;
+    }
+  }
+
+  return 0;
+}
+
+function randomWeeklyFaceitDeltaForXp(xp = 0) {
+  const rawDelta = randomWeeklyFaceitDelta();
+
+  if (xp < 50 || rawDelta === 0) {
+    return rawDelta;
+  }
+
+  const magnitude = Math.abs(rawDelta);
+  const gainRoll = Math.random() < 0.65;
+
+  return gainRoll ? magnitude : -magnitude;
+}
+
+async function simulateWeeklyNpcFaceitElo(prisma: typeof DatabaseClient.prisma, userPlayerId?: number | null) {
+  const players = await prisma.player.findMany({
+    where: userPlayerId ? { id: { not: userPlayerId } } : {},
+    select: {
+      id: true,
+      xp: true,
+    },
+  });
+
+  const chunkSize = 500;
+  for (let i = 0; i < players.length; i += chunkSize) {
+    const chunk = players.slice(i, i + chunkSize);
+
+    await prisma.$transaction(
+      chunk.map((player) => {
+        const delta = randomWeeklyFaceitDeltaForXp(player.xp);
+
+        return prisma.player.update({
+          where: { id: player.id },
+          data: {
+            // Increment from the player's CURRENT Elo in DB at write time.
+            elo: { increment: delta },
+          },
+        });
+      })
+    );
+
+    await prisma.player.updateMany({
+      where: {
+        id: { in: chunk.map((player) => player.id) },
+        elo: { gt: 5100 },
+      },
+      data: { elo: 5000 },
+    });
+
+    await prisma.player.updateMany({
+      where: {
+        id: { in: chunk.map((player) => player.id) },
+        elo: { gte: 5000, lte: 5100 },
+      },
+      data: {
+        // Keep top ratings around the 5000-5100 band by nudging back down.
+        elo: { decrement: 75 },
+      },
+    });
+
+    await prisma.player.updateMany({
+      where: {
+        id: { in: chunk.map((player) => player.id) },
+        elo: { lt: 100 },
+      },
+      data: { elo: 100 },
+    });
+  }
+
+  Engine.Runtime.Instance.log.info(
+    "Weekly FACEIT Elo simulation applied to %d players (excluding user).",
+    players.length
+  );
 }
 
 /**
