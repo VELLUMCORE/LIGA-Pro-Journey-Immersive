@@ -147,6 +147,11 @@ export class FaceitMatchmaker {
     return 1 / (1 + Math.pow(10, (eloB - eloA) / 400));
   }
 
+  private static isAwperRole(role: string | null | undefined) {
+    const normalizedRole = String(role ?? "").toUpperCase();
+    return normalizedRole === "AWPER" || normalizedRole === "SNIPER";
+  }
+
   private static calcEloAdjustment(expWin: number, maxPartyEloDelta?: number) {
     if (Number.isFinite(maxPartyEloDelta) && (maxPartyEloDelta as number) >= 1500) {
       return { gain: 15, loss: 35 };
@@ -295,36 +300,36 @@ export class FaceitMatchmaker {
     // -------------------------------------------------
     // 4. Split snipers vs riflers
     // -------------------------------------------------
-    const snipers = bots.filter((b) => b.role === "SNIPER");
-    const riflers = bots.filter((b) => b.role !== "SNIPER");
+    const awpers = bots.filter((b) => this.isAwperRole(b.role));
+    const riflers = bots.filter((b) => !this.isAwperRole(b.role));
 
     // -------------------------------------------------
     // 5. Determine sniper requirements based on player role
     // -------------------------------------------------
-    const userRole = userDb.role;
+    const userIsAwper = this.isAwperRole(userDb.role);
     let snipersForUserTeam = 0;
     let snipersForEnemyTeam = 1;
 
-    if (userRole === "AWPER") {
+    if (userIsAwper) {
       snipersForUserTeam = 0;
       snipersForEnemyTeam = 1;
-    } else if (userRole === "IGL" || userRole === "RIFLER") {
+    } else {
       snipersForUserTeam = 1;
       snipersForEnemyTeam = 1;
     }
 
     const totalSnipersNeeded = snipersForUserTeam + snipersForEnemyTeam;
 
-    if (snipers.length < totalSnipersNeeded) {
+    if (awpers.length < totalSnipersNeeded) {
       throw new Error(
-        `Not enough snipers in your region (needed ${totalSnipersNeeded}, found ${snipers.length})`
+        `Not enough snipers in your region (needed ${totalSnipersNeeded}, found ${awpers.length})`
       );
     }
 
     // -------------------------------------------------
     // 6. Pick EXACT snipers needed
     // -------------------------------------------------
-    const selectedSnipers = shuffle(snipers).slice(0, totalSnipersNeeded);
+    const selectedSnipers = shuffle(awpers).slice(0, totalSnipersNeeded);
 
     const userTeamSnipers = selectedSnipers.slice(0, snipersForUserTeam);
     const enemyTeamSnipers = selectedSnipers.slice(snipersForUserTeam);
@@ -389,6 +394,15 @@ export class FaceitMatchmaker {
 
     const teamA = this.annotateStacks(rawTeamA, "A");
     const teamB = this.annotateStacks(rawTeamB, "B");
+
+    const awpersInTeamA = teamA.filter((player) => this.isAwperRole(player.role)).length;
+    const awpersInTeamB = teamB.filter((player) => this.isAwperRole(player.role)).length;
+
+    if (awpersInTeamA !== 1 || awpersInTeamB !== 1) {
+      throw new Error(
+        `FACEIT_AWPER_CONSTRAINT_FAILED (teamA=${awpersInTeamA}, teamB=${awpersInTeamB})`
+      );
+    }
 
     // -------------------------------------------------
     // 9. Elo math

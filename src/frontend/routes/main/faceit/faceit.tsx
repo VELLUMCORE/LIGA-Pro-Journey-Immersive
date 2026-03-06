@@ -526,19 +526,38 @@ export default function Faceit(): JSX.Element {
             queueType: "TEAM" as const,
           }));
 
+          const takeFromPool = (preferAwper: boolean): MatchPlayer | null => {
+            const preferredIndex = basePool.findIndex((candidate) => isAwperRole(candidate.role) === preferAwper);
+            if (preferredIndex !== -1) {
+              const [picked] = basePool.splice(preferredIndex, 1);
+              return picked ?? null;
+            }
+
+            const fallback = basePool.shift();
+            return fallback ?? null;
+          };
+
+          const countAwpers = (team: MatchPlayer[]) => team.filter((player) => isAwperRole(player.role)).length;
+
           const rebuiltUserTeam: MatchPlayer[] = [lockedUser, ...selectedParty];
           while (rebuiltUserTeam.length < userTeam.length && basePool.length > 0) {
-            const next = basePool.shift();
+            const userNeedsAwper = countAwpers(rebuiltUserTeam) === 0;
+            const next = takeFromPool(userNeedsAwper);
             if (next) rebuiltUserTeam.push(next);
           }
 
           const rebuiltEnemyTeam: MatchPlayer[] = [];
           while (rebuiltEnemyTeam.length < enemyTeam.length && basePool.length > 0) {
-            const next = basePool.shift();
+            const enemyNeedsAwper = countAwpers(rebuiltEnemyTeam) === 0;
+            const next = takeFromPool(enemyNeedsAwper);
             if (next) rebuiltEnemyTeam.push(next);
           }
 
           if (rebuiltUserTeam.length !== userTeam.length || rebuiltEnemyTeam.length !== enemyTeam.length) {
+            return room;
+          }
+
+          if (countAwpers(rebuiltUserTeam) !== 1 || countAwpers(rebuiltEnemyTeam) !== 1) {
             return room;
           }
 
