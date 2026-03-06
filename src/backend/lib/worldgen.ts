@@ -3446,12 +3446,23 @@ function isFaceitRegionalFederationSlug(
   );
 }
 
-function tierFromElo(elo: number): TierSlug | null {
-  if (elo < UserOfferSettings.FACEIT_ELO_THRESHOLDS.OPEN_MAX) return TierSlug.LEAGUE_OPEN;
-  if (elo < UserOfferSettings.FACEIT_ELO_THRESHOLDS.INTERMEDIATE_MAX)
-    return TierSlug.LEAGUE_INTERMEDIATE;
+function tierFromEloByFederation(elo: number, federationSlug: Constants.FederationSlug): TierSlug {
+  const openMax = UserOfferSettings.FACEIT_ELO_THRESHOLDS.OPEN_MAX;
+  const intermediateMax = UserOfferSettings.FACEIT_ELO_THRESHOLDS.INTERMEDIATE_MAX;
 
-  return null;
+  // Asia and Oceania do not run Intermediate/Main divisions.
+  if (
+    federationSlug === Constants.FederationSlug.ESPORTS_ASIA ||
+    federationSlug === Constants.FederationSlug.ESPORTS_OCE
+  ) {
+    return elo < intermediateMax ? TierSlug.LEAGUE_OPEN : TierSlug.LEAGUE_ADVANCED;
+  }
+
+  // EU + Americas use Open/Intermediate/Main progression.
+  if (elo < openMax) return TierSlug.LEAGUE_OPEN;
+  if (elo < intermediateMax) return TierSlug.LEAGUE_INTERMEDIATE;
+
+  return TierSlug.LEAGUE_MAIN;
 }
 
 export async function sendUserFaceitOffer() {
@@ -3553,8 +3564,7 @@ export async function sendUserFaceitOffer() {
   pbx = clampPbx(pbx);
 
   const elo = profile.faceitElo ?? 0;
-  const targetTier = tierFromElo(elo);
-  if (!targetTier) return Promise.resolve();
+  const targetTier = tierFromEloByFederation(elo, userFederationSlug);
 
   const isHotProspect =
     matchCount >= 20 &&
@@ -3569,8 +3579,6 @@ export async function sendUserFaceitOffer() {
   if (!Chance.rollD2(pbx)) {
     return Promise.resolve();
   }
-
-  if (!UserOfferSettings.FACEIT_ELIGIBLE_DIVISIONS.includes(targetTier)) return Promise.resolve();
 
   // Federation restriction (own federation)
   const userFedId = profile.player.country?.continent?.federationId ?? null;
