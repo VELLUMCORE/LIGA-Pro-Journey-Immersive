@@ -405,7 +405,14 @@ export default function Faceit(): JSX.Element {
           (saveScopedKey ? localStorage.getItem(saveScopedKey) : null) ||
           localStorage.getItem("faceit-party-members");
 
-        let queueElo = elo;
+        const profileQueueElo = Number(state.profile?.faceitElo);
+        const baseQueueElo = Number.isFinite(elo) && elo > 0
+          ? elo
+          : Number.isFinite(profileQueueElo) && profileQueueElo > 0
+            ? profileQueueElo
+            : null;
+
+        let queueElo = baseQueueElo;
         let maxPartyEloDelta = 0;
         if (storedParty) {
           const parsedParty = JSON.parse(storedParty);
@@ -414,16 +421,19 @@ export default function Faceit(): JSX.Element {
               .map((member: any) => Number(member?.elo))
               .filter((memberElo: number) => Number.isFinite(memberElo) && memberElo > 0);
 
-            if (partyElos.length > 0) {
-              const totalElo = elo + partyElos.reduce((sum: number, memberElo: number) => sum + memberElo, 0);
+            if (partyElos.length > 0 && baseQueueElo) {
+              const totalElo = baseQueueElo + partyElos.reduce((sum: number, memberElo: number) => sum + memberElo, 0);
               queueElo = Math.round(totalElo / (partyElos.length + 1));
               const highestPartyElo = Math.max(...partyElos);
-              maxPartyEloDelta = Math.max(0, Math.round(highestPartyElo - elo));
+              maxPartyEloDelta = Math.max(0, Math.round(highestPartyElo - baseQueueElo));
             }
           }
         }
 
-        res = await api.faceit.queue({ queueElo, maxPartyEloDelta });
+        res = await api.faceit.queue({
+          queueElo: queueElo ?? undefined,
+          maxPartyEloDelta,
+        });
       } catch (e: any) {
         const msg = String(e?.message ?? e);
         if (msg.includes("FACEIT_BLOCKED_MATCHDAY_USER_TODAY")) {
