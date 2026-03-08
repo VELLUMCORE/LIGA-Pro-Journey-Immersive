@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { LEVEL_IMAGES } from "./faceit";
 import { Image } from "@liga/frontend/components";
 import { FaceitHeader } from "./faceit";
@@ -222,6 +222,8 @@ export default function MatchRoom({
       return null;
     }
   });
+  const connectCooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isConnectCooldown, setIsConnectCooldown] = useState(false);
 
   // ------------------------------
   // SETTINGS / MAP POOL FOR VETO
@@ -443,7 +445,16 @@ export default function MatchRoom({
   // ------------------------------
 
   const handleStartMatch = async () => {
-    if (!deciderMap) return;
+    if (!deciderMap || isConnectCooldown) return;
+
+    setIsConnectCooldown(true);
+    if (connectCooldownTimeoutRef.current) {
+      clearTimeout(connectCooldownTimeoutRef.current);
+    }
+    connectCooldownTimeoutRef.current = setTimeout(() => {
+      setIsConnectCooldown(false);
+      connectCooldownTimeoutRef.current = null;
+    }, 45_000);
 
     const result: { matchId: number } = await api.faceit.startMatch({
       ...room,
@@ -461,6 +472,14 @@ export default function MatchRoom({
 
     setTab("scoreboard");
   };
+
+  useEffect(() => {
+    return () => {
+      if (connectCooldownTimeoutRef.current) {
+        clearTimeout(connectCooldownTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // ------------------------------
   // POLL BACKEND FOR STATUS
@@ -820,11 +839,11 @@ export default function MatchRoom({
                       </div>
 
                       <button
-                        className={`mt-4 px-8 py-3 rounded text-lg ${vetoComplete
+                        className={`mt-4 px-8 py-3 rounded text-lg ${vetoComplete && !isConnectCooldown
                           ? "bg-orange-600 hover:bg-orange-700"
                           : "bg-neutral-700 cursor-not-allowed opacity-60"
                           }`}
-                        disabled={!vetoComplete}
+                        disabled={!vetoComplete || isConnectCooldown}
                         onClick={handleStartMatch}
                       >
                         {vetoComplete
