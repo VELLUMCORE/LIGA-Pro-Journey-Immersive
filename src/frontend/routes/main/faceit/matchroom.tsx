@@ -582,9 +582,9 @@ export default function MatchRoom({
         currentTeamId={state.profile?.teamId ?? null}
         currentPlayerCountryId={state.profile?.player?.countryId ?? null}
         currentTeamCountryId={state.profile?.team?.countryId ?? null}
-        countryRegionById={Object.fromEntries(
+        countryFederationById={Object.fromEntries(
           (state.continents as any[]).flatMap((continent: any) =>
-            (continent.countries ?? []).map((country: any) => [country.id, continent.id])
+            (continent.countries ?? []).map((country: any) => [country.id, continent.federationId])
           )
         )}
         currentDate={state.profile?.date ?? new Date()}
