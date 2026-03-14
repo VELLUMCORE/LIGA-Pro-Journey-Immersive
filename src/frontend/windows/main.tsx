@@ -190,6 +190,18 @@ function Root() {
   const t = useTranslation('components');
 
   React.useEffect(() => {
+    const onMouseNavigate = (event: MouseEvent) => {
+      if (event.button === 3) {
+        event.preventDefault();
+        navigate(-1);
+      } else if (event.button === 4) {
+        event.preventDefault();
+        navigate(1);
+      }
+    };
+
+    window.addEventListener('mousedown', onMouseNavigate);
+
     // what's new modal check
     api.app.whatsNew();
 
@@ -246,7 +258,10 @@ function Root() {
       () => api.app.status().then((resp) => dispatch(appStatusUpdate(resp))),
       SETTINGS_VALIDATE_FREQUENCY,
     );
-    return () => clearInterval(heartbeat);
+    return () => {
+      window.removeEventListener('mousedown', onMouseNavigate);
+      clearInterval(heartbeat);
+    };
   }, []);
 
   // setup the theme
