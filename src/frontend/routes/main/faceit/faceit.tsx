@@ -126,6 +126,13 @@ type LastSuggestionMatchPerformance = {
   isTopFragger: boolean;
 };
 
+type MatchPlayerStat = {
+  id: number;
+  kills: number;
+  deaths: number;
+  kdRatio: number;
+};
+
 const LEVEL_RANGES: Record<number, [number, number]> = {
   1: [100, 800],
   2: [801, 950],
@@ -305,7 +312,7 @@ export default function Faceit(): JSX.Element {
     const userCountryId = state.profile?.player?.countryId;
     if (!userCountryId) return "REGIONAL RANKINGS";
 
-    const continent = (state.continents as any[]).find((entry) =>
+    const continent = (state.continents as any[]).find((entry: any) =>
       (entry.countries || []).some((country: any) => country.id === userCountryId)
     );
 
@@ -1190,27 +1197,27 @@ export function FaceitHeader({
       opponentIds = new Set<number>();
     }
 
-    const stats = players.map((player: { id: number }) => {
+    const stats: MatchPlayerStat[] = players.map((player: { id: number }) => {
       const kills = events.filter((event: any) => event.type === "playerkilled" && event.attackerId === player.id).length;
       const deaths = events.filter((event: any) => event.type === "playerkilled" && event.victimId === player.id).length;
       const kdRatio = deaths > 0 ? kills / deaths : kills;
       return { id: player.id, kills, deaths, kdRatio };
     });
 
-    const userStat = stats.find((entry) => entry.id === playerId);
+    const userStat = stats.find((entry: MatchPlayerStat) => entry.id === playerId);
     if (!userStat) return null;
 
     let userTeamStats = teammateIds.has(playerId)
-      ? stats.filter((entry) => teammateIds.has(entry.id))
+      ? stats.filter((entry: MatchPlayerStat) => teammateIds.has(entry.id))
       : opponentIds.has(playerId)
-        ? stats.filter((entry) => opponentIds.has(entry.id))
+        ? stats.filter((entry: MatchPlayerStat) => opponentIds.has(entry.id))
         : [];
 
     if (!userTeamStats.length) {
       const midpoint = Math.ceil(stats.length / 2);
       const firstHalf = stats.slice(0, midpoint);
       const secondHalf = stats.slice(midpoint);
-      userTeamStats = firstHalf.some((entry) => entry.id === playerId) ? firstHalf : secondHalf;
+      userTeamStats = firstHalf.some((entry: MatchPlayerStat) => entry.id === playerId) ? firstHalf : secondHalf;
     }
 
     const topFragger = [...userTeamStats].sort((a, b) => {
