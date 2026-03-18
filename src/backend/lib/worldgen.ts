@@ -2408,7 +2408,14 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
 
     const teams = await prisma.team.findMany({
       where: teamWhere,
-      include: { personas: true },
+      include: {
+        personas: true,
+        country: {
+          include: {
+            continent: true,
+          },
+        },
+      },
     });
 
     if (!teams.length) {
@@ -2424,7 +2431,8 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
     let pool = selectCountryAwareOfferPool(
       teams,
       player.countryId,
-      UserOfferSettings.SAME_COUNTRY_OFFER_CHANCE,
+      player.country?.continent?.code ?? null,
+      userFedId,
       lastOfferTeamId,
     );
 
@@ -3584,10 +3592,20 @@ export async function recalculateAllTeamCountryIdentities() {
   return Promise.resolve();
 }
 
-function selectCountryAwareOfferPool<T extends { id: number; countryId: number }>(
+function selectCountryAwareOfferPool<
+  T extends {
+    id: number;
+    countryId: number;
+    country?: {
+      code?: string | null;
+      continent?: { code?: string | null; federationId?: number | null } | null;
+    } | null;
+  },
+>(
   teams: T[],
   playerCountryId: number | null | undefined,
-  sameCountryPbx: number,
+  playerCountryContinentCode: string | null | undefined,
+  playerFederationId: number | null | undefined,
   lastOfferTeamId: number | null,
 ) {
   const repeatSafeTeams = filterRepeatedOfferTeam(teams, lastOfferTeamId);
@@ -3595,14 +3613,73 @@ function selectCountryAwareOfferPool<T extends { id: number; countryId: number }
   if (!playerCountryId) return repeatSafeTeams;
 
   const sameCountryTeams = repeatSafeTeams.filter((team) => team.countryId === playerCountryId);
-  const otherCountryTeams = repeatSafeTeams.filter((team) => team.countryId !== playerCountryId);
+  const sameCoreTeams = repeatSafeTeams.filter((team) => {
+    if (team.countryId === playerCountryId) return false;
+    const teamRegionCode = getTeamRegionCode(team);
+    return Boolean(
+      playerCountryContinentCode &&
+        teamRegionCode &&
+        teamRegionCode === playerCountryContinentCode.toUpperCase() &&
+        MIXED_REGION_COUNTRY_CODES.has(teamRegionCode),
+    );
+  });
+  const otherSameFederationTeams = repeatSafeTeams.filter((team) => {
+    if (team.countryId === playerCountryId) return false;
 
-  if (!sameCountryTeams.length) {
-    return otherCountryTeams.length ? otherCountryTeams : repeatSafeTeams;
+    const teamRegionCode = getTeamRegionCode(team);
+    if (
+      playerCountryContinentCode &&
+      teamRegionCode &&
+      teamRegionCode === playerCountryContinentCode.toUpperCase() &&
+      MIXED_REGION_COUNTRY_CODES.has(teamRegionCode)
+    ) {
+      return false;
+    }
+
+    if (playerFederationId == null) return false;
+
+    return team.country?.continent?.federationId === playerFederationId;
+  });
+  const fallbackTeams = repeatSafeTeams.filter(
+    (team) =>
+      !sameCountryTeams.some((candidate) => candidate.id === team.id) &&
+      !sameCoreTeams.some((candidate) => candidate.id === team.id) &&
+      !otherSameFederationTeams.some((candidate) => candidate.id === team.id),
+  );
+
+  const weightedBuckets = {
+    sameCountry: {
+      teams: sameCountryTeams,
+      weight: UserOfferSettings.SAME_COUNTRY_OFFER_CHANCE,
+    },
+    sameCore: {
+      teams: sameCoreTeams,
+      weight: UserOfferSettings.SAME_CORE_OFFER_CHANCE,
+    },
+    otherSameFederation: {
+      teams: otherSameFederationTeams,
+      weight: UserOfferSettings.SAME_FEDERATION_OTHER_COUNTRY_OFFER_CHANCE,
+    },
+  } as const;
+
+  const availableBuckets = Object.entries(weightedBuckets).filter(([, bucket]) => bucket.teams.length);
+  if (!availableBuckets.length) {
+    return fallbackTeams.length ? fallbackTeams : repeatSafeTeams;
   }
-  if (!otherCountryTeams.length) return sameCountryTeams;
 
-  return Chance.rollD2(sameCountryPbx) ? sameCountryTeams : otherCountryTeams;
+  const pickedBucket = String(
+    Chance.roll(
+      Object.fromEntries(
+        availableBuckets.map(([bucketName, bucket]) => [bucketName, bucket.weight]),
+      ) as Record<string, number>,
+    ),
+  ) as keyof typeof weightedBuckets;
+
+  if (weightedBuckets[pickedBucket]?.teams.length) {
+    return weightedBuckets[pickedBucket].teams;
+  }
+
+  return availableBuckets[0]?.[1].teams ?? (fallbackTeams.length ? fallbackTeams : repeatSafeTeams);
 }
 
 /**
@@ -3621,7 +3698,14 @@ export async function sendPlayerInviteForUser() {
   const prisma = DatabaseClient.prisma;
 
   const teams = await prisma.team.findMany({
-    include: { personas: true },
+    include: {
+      personas: true,
+      country: {
+        include: {
+          continent: true,
+        },
+      },
+    },
   });
 
   if (!teams.length) return Promise.resolve();
@@ -3630,7 +3714,8 @@ export async function sendPlayerInviteForUser() {
   const offerPool = selectCountryAwareOfferPool(
     teams,
     profile.player.countryId,
-    UserOfferSettings.SAME_COUNTRY_OFFER_CHANCE,
+    profile.player.country?.continent?.code ?? null,
+    profile.player.country?.continent?.federationId ?? null,
     lastOfferTeamId,
   );
 
@@ -3881,7 +3966,14 @@ export async function sendUserFaceitOffer() {
         ? { country: { continent: { federationId: userFedId } } }
         : {}),
     },
-    include: { personas: true },
+    include: {
+      personas: true,
+      country: {
+        include: {
+          continent: true,
+        },
+      },
+    },
   });
 
   if (!teams.length) return Promise.resolve();
@@ -3890,7 +3982,8 @@ export async function sendUserFaceitOffer() {
   let pool = selectCountryAwareOfferPool(
     teams,
     profile.player.countryId,
-    UserOfferSettings.SAME_COUNTRY_OFFER_CHANCE,
+    profile.player.country?.continent?.code ?? null,
+    userFedId,
     lastOfferTeamId,
   );
 
