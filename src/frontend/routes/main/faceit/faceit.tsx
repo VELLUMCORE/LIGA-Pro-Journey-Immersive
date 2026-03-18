@@ -119,6 +119,13 @@ type DailyState = {
   date: string;
 };
 
+type LastSuggestionMatchPerformance = {
+  matchId: string;
+  playerId: number;
+  kdRatio: number;
+  isTopFragger: boolean;
+};
+
 const LEVEL_RANGES: Record<number, [number, number]> = {
   1: [100, 800],
   2: [801, 950],
@@ -845,6 +852,7 @@ export function FaceitHeader({
   const previousDayKeyRef = useRef<string | null>(null);
   const [lastPugTeammates, setLastPugTeammates] = useState<MatchPlayer[]>([]);
   const [latestTrackedPugId, setLatestTrackedPugId] = useState<string | null>(null);
+  const [lastSuggestionMatchPerformance, setLastSuggestionMatchPerformance] = useState<LastSuggestionMatchPerformance | null>(null);
   const [dbPlayerSnapshotById, setDbPlayerSnapshotById] = useState<Map<number, MatchPlayer>>(new Map());
   const safeCurrentDate = React.useMemo(() => {
     const parsed = currentDate ? new Date(currentDate) : new Date();
@@ -1159,6 +1167,103 @@ export function FaceitHeader({
     return eloValue > LEVEL_RANGES[10][0] ? 10 : 1;
   };
 
+  const computeLastSuggestionMatchPerformance = React.useCallback(async (matchId: string, playerId: number) => {
+    const matchData = await api.faceit.getMatchData(matchId);
+    if (!matchData?.match) return null;
+
+    const players = Array.isArray(matchData.players) ? matchData.players : [];
+    const events = Array.isArray(matchData.events) ? matchData.events : [];
+    const match = matchData.match;
+
+    let teammateIds = new Set<number>();
+    let opponentIds = new Set<number>();
+
+    try {
+      if (match.faceitTeammates) {
+        teammateIds = new Set((JSON.parse(match.faceitTeammates) as Array<{ id: number }>).map((p) => p.id));
+      }
+      if (match.faceitOpponents) {
+        opponentIds = new Set((JSON.parse(match.faceitOpponents) as Array<{ id: number }>).map((p) => p.id));
+      }
+    } catch {
+      teammateIds = new Set<number>();
+      opponentIds = new Set<number>();
+    }
+
+    const stats = players.map((player: { id: number }) => {
+      const kills = events.filter((event: any) => event.type === "playerkilled" && event.attackerId === player.id).length;
+      const deaths = events.filter((event: any) => event.type === "playerkilled" && event.victimId === player.id).length;
+      const kdRatio = deaths > 0 ? kills / deaths : kills;
+      return { id: player.id, kills, deaths, kdRatio };
+    });
+
+    const userStat = stats.find((entry) => entry.id === playerId);
+    if (!userStat) return null;
+
+    let userTeamStats = teammateIds.has(playerId)
+      ? stats.filter((entry) => teammateIds.has(entry.id))
+      : opponentIds.has(playerId)
+        ? stats.filter((entry) => opponentIds.has(entry.id))
+        : [];
+
+    if (!userTeamStats.length) {
+      const midpoint = Math.ceil(stats.length / 2);
+      const firstHalf = stats.slice(0, midpoint);
+      const secondHalf = stats.slice(midpoint);
+      userTeamStats = firstHalf.some((entry) => entry.id === playerId) ? firstHalf : secondHalf;
+    }
+
+    const topFragger = [...userTeamStats].sort((a, b) => {
+      if (b.kills !== a.kills) return b.kills - a.kills;
+      return b.kdRatio - a.kdRatio;
+    })[0];
+
+    return {
+      matchId,
+      playerId,
+      kdRatio: userStat.kdRatio,
+      isTopFragger: topFragger?.id === playerId,
+    } satisfies LastSuggestionMatchPerformance;
+  }, []);
+
+  useEffect(() => {
+    if (activeMatch || !latestTrackedPugId || !currentPlayerId) return;
+
+    let cancelled = false;
+
+    computeLastSuggestionMatchPerformance(latestTrackedPugId, currentPlayerId)
+      .then((performance) => {
+        if (cancelled || !performance) return;
+        setLastSuggestionMatchPerformance((prev) => {
+          if (
+            prev?.matchId === performance.matchId &&
+            prev.playerId === performance.playerId &&
+            prev.kdRatio === performance.kdRatio &&
+            prev.isTopFragger === performance.isTopFragger
+          ) {
+            return prev;
+          }
+
+          return performance;
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setLastSuggestionMatchPerformance(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMatch, latestTrackedPugId, currentPlayerId, computeLastSuggestionMatchPerformance]);
+
+  const userHadGreatLastSuggestionMatch = React.useMemo(() => {
+    if (!lastSuggestionMatchPerformance || lastSuggestionMatchPerformance.playerId !== currentPlayerId) {
+      return false;
+    }
+
+    return lastSuggestionMatchPerformance.kdRatio > 2 && lastSuggestionMatchPerformance.isTopFragger;
+  }, [lastSuggestionMatchPerformance, currentPlayerId]);
+
   const suggestions = React.useMemo(() => {
     const completedPugTeammates = activeMatch ? [] : lastPugTeammates;
     const combined = [...profileTeammates, ...completedPugTeammates];
@@ -1470,7 +1575,10 @@ export function FaceitHeader({
       setPendingRequests((prev) => prev.filter((id) => id !== teammate.id));
 
       const isCurrentLeagueTeammate = Boolean(currentTeamId && teammate.teamId === currentTeamId);
-      const declined = isCurrentLeagueTeammate ? false : Math.random() < 0.6;
+      const teammateIsFromLastPlayedMatch = lastPugTeammates.some((player) => player.id === teammate.id);
+      const shouldBoostAcceptance = teammateIsFromLastPlayedMatch && userHadGreatLastSuggestionMatch;
+      const declineThreshold = shouldBoostAcceptance ? 0.25 : 0.6;
+      const declined = isCurrentLeagueTeammate ? false : Math.random() < declineThreshold;
       if (declined) {
         toast.error(`${teammate.name} declined your friend request.`);
         setDeclinedSuggestionIds((prev) => (prev.includes(teammate.id) ? prev : [...prev, teammate.id]));
