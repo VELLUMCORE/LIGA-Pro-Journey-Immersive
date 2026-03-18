@@ -2419,19 +2419,23 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
       return Promise.resolve();
     }
 
-    let pool = teams;
+    const lastOfferTeamId = await getLastOfferTeamId(player.id);
+    let pool = selectCountryAwareOfferPool(
+      teams,
+      player.countryId,
+      UserOfferSettings.SAME_COUNTRY_OFFER_CHANCE,
+      lastOfferTeamId,
+    );
 
     if (proLowRankOnly && pickedTierIdx === idxPro) {
-      const sortedAsc = [...teams].sort((a, b) => (a.elo ?? 0) - (b.elo ?? 0));
+      const sortedAsc = [...pool].sort((a, b) => (a.elo ?? 0) - (b.elo ?? 0));
       const bottomCount = Math.max(3, Math.floor(sortedAsc.length * 0.30));
       pool = sortedAsc.slice(0, bottomCount);
-    } else {
+    } else if (leagueSignal >= 0.75) {
       // Strong performance: bias toward top teams in that tier
-      if (leagueSignal >= 0.75) {
-        const sortedDesc = [...teams].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0));
-        const topCount = Math.max(3, Math.floor(sortedDesc.length * 0.25));
-        pool = sortedDesc.slice(0, topCount);
-      }
+      const sortedDesc = [...pool].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0));
+      const topCount = Math.max(3, Math.floor(sortedDesc.length * 0.25));
+      pool = sortedDesc.slice(0, topCount);
     }
 
     const from = sample(pool);
@@ -3424,6 +3428,47 @@ export async function sendUserAward(
   );
 }
 
+async function getLastOfferTeamId(playerId: number) {
+  const latestTransfer = await DatabaseClient.prisma.transfer.findFirst({
+    where: { playerId },
+    orderBy: { id: "desc" },
+    select: { teamIdFrom: true },
+  });
+
+  return latestTransfer?.teamIdFrom ?? null;
+}
+
+function filterRepeatedOfferTeam<T extends { id: number }>(
+  teams: T[],
+  lastOfferTeamId: number | null,
+) {
+  if (!lastOfferTeamId || teams.length <= 1) return teams;
+
+  const filteredTeams = teams.filter((team) => team.id !== lastOfferTeamId);
+  return filteredTeams.length ? filteredTeams : teams;
+}
+
+function selectCountryAwareOfferPool<T extends { id: number; countryId: number }>(
+  teams: T[],
+  playerCountryId: number | null | undefined,
+  sameCountryPbx: number,
+  lastOfferTeamId: number | null,
+) {
+  const repeatSafeTeams = filterRepeatedOfferTeam(teams, lastOfferTeamId);
+
+  if (!playerCountryId) return repeatSafeTeams;
+
+  const sameCountryTeams = repeatSafeTeams.filter((team) => team.countryId === playerCountryId);
+  const otherCountryTeams = repeatSafeTeams.filter((team) => team.countryId !== playerCountryId);
+
+  if (!sameCountryTeams.length) {
+    return otherCountryTeams.length ? otherCountryTeams : repeatSafeTeams;
+  }
+  if (!otherCountryTeams.length) return sameCountryTeams;
+
+  return Chance.rollD2(sameCountryPbx) ? sameCountryTeams : otherCountryTeams;
+}
+
 /**
  * Creates a team invite (transfer) targeting the user player when they are teamless.
  *
@@ -3439,14 +3484,21 @@ export async function sendPlayerInviteForUser() {
 
   const prisma = DatabaseClient.prisma;
 
-  // Pick a random team for now
   const teams = await prisma.team.findMany({
     include: { personas: true },
   });
 
   if (!teams.length) return Promise.resolve();
 
-  const from = sample(teams);
+  const lastOfferTeamId = await getLastOfferTeamId(profile.playerId!);
+  const offerPool = selectCountryAwareOfferPool(
+    teams,
+    profile.player.countryId,
+    UserOfferSettings.SAME_COUNTRY_OFFER_CHANCE,
+    lastOfferTeamId,
+  );
+
+  const from = sample(offerPool);
   const target = profile.player;
 
   // Basic wages/cost – for now we just reuse whatever the player currently has.
@@ -3698,10 +3750,16 @@ export async function sendUserFaceitOffer() {
 
   if (!teams.length) return Promise.resolve();
 
-  let pool = teams;
+  const lastOfferTeamId = await getLastOfferTeamId(profile.playerId!);
+  let pool = selectCountryAwareOfferPool(
+    teams,
+    profile.player.countryId,
+    UserOfferSettings.SAME_COUNTRY_OFFER_CHANCE,
+    lastOfferTeamId,
+  );
 
   if (isHotProspect) {
-    const sorted = [...teams].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0));
+    const sorted = [...pool].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0));
     const topCount = Math.max(3, Math.floor(sorted.length * 0.2)); // top 20%, min 3
     pool = sorted.slice(0, topCount);
   }
