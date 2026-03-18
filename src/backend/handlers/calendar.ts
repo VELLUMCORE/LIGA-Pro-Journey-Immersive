@@ -147,6 +147,10 @@ async function onTickEnd(input: Calendar[], status?: Engine.LoopStatus) {
   // npc transfers
   await Worldgen.sendNPCTransferOffer();
 
+  // keep team country identities synced even for teams that did not pass
+  // through a direct roster-change recalculation hook this tick
+  await Worldgen.recalculateAllTeamCountryIdentities();
+
   // If stopped, do not advance day
   if (status === Engine.LoopStatus.TERMINATED) {
     Engine.Runtime.Instance.log.info("Stopping...");

@@ -102,6 +102,31 @@ meter::-webkit-meter-bar {
   @apply box-content border border-black;
 }
 
+.fp.eu,
+.fp.na,
+.fp.sa,
+.fp.as {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.fp.eu {
+  background-image: url('./flags/eu.png');
+}
+
+.fp.na {
+  background-image: url('./flags/na.png');
+}
+
+.fp.sa {
+  background-image: url('./flags/sa.png');
+}
+
+.fp.as {
+  background-image: url('./flags/as.png');
+}
+
 /** adjust react-hot-toast stylings */
 .react-hot-toast {
   @apply text-base-content bg-base-100 max-w-none p-0;

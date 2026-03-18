@@ -1304,6 +1304,7 @@ export async function acceptTransferOffer(transferId: number) {
     tier: destTierIdx,
     startedAt: now,
   });
+  await recalculateTeamCountryIdentity(fromTeamId);
 
   // Schedule contract expiry event in the calendar.
   await DatabaseClient.prisma.calendar.deleteMany({
@@ -3448,6 +3449,141 @@ function filterRepeatedOfferTeam<T extends { id: number }>(
   return filteredTeams.length ? filteredTeams : teams;
 }
 
+
+const MIXED_REGION_COUNTRY_CODES = new Set(['EU', 'NA', 'SA', 'AS']);
+const MIXED_REGION_STORAGE_CODES: Record<string, string> = {
+  eu: 'EU',
+  na: 'NA',
+  sa: 'SA',
+  as: 'AS',
+};
+
+function getTeamRegionCode(team: {
+  countryId: number;
+  country?: { code?: string | null; continent?: { code?: string | null } | null } | null;
+}) {
+  const teamCountryCode = team.country?.code ?? null;
+  const storedRegionCode = teamCountryCode ? MIXED_REGION_STORAGE_CODES[teamCountryCode] : null;
+
+  if (storedRegionCode) {
+    return storedRegionCode;
+  }
+
+  return team.country?.continent?.code?.toUpperCase() ?? null;
+}
+
+function matchesTeamCountryPreference(
+  team: {
+    countryId: number;
+    country?: { code?: string | null; continent?: { code?: string | null } | null } | null;
+  },
+  candidate: {
+    countryId?: number | null;
+    country?: { continent?: { code?: string | null } | null } | null;
+  },
+) {
+  const teamRegionCode = getTeamRegionCode(team);
+
+  if (teamRegionCode && MIXED_REGION_COUNTRY_CODES.has(teamRegionCode)) {
+    return candidate.country?.continent?.code?.toUpperCase() === teamRegionCode;
+  }
+
+  return candidate.countryId === team.countryId;
+}
+
+async function recalculateTeamCountryIdentity(teamId: number) {
+  const team = await DatabaseClient.prisma.team.findFirst({
+    where: { id: teamId },
+    include: {
+      country: {
+        include: {
+          continent: true,
+        },
+      },
+      players: {
+        where: { starter: true },
+        include: {
+          country: {
+            include: {
+              continent: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!team || team.players.length < 3) {
+    return Promise.resolve();
+  }
+
+  const countryCounts = new Map<number, number>();
+  const continentCounts = new Map<string, number>();
+
+  for (const player of team.players) {
+    countryCounts.set(player.countryId, (countryCounts.get(player.countryId) ?? 0) + 1);
+
+    const continentCode = player.country?.continent?.code?.toUpperCase();
+    if (continentCode) {
+      continentCounts.set(continentCode, (continentCounts.get(continentCode) ?? 0) + 1);
+    }
+  }
+
+  const dominantCountry = [...countryCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+
+  let nextCountryId = dominantCountry?.[1] >= 3 ? dominantCountry[0] : null;
+
+  if (!nextCountryId) {
+    const dominantContinent = [...continentCounts.entries()]
+      .filter(([code]) => MIXED_REGION_COUNTRY_CODES.has(code))
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+
+    if (dominantContinent?.[1] >= 3) {
+      const regionCountry = await DatabaseClient.prisma.country.findUnique({
+        where: { code: dominantContinent[0].toLowerCase() },
+        select: { id: true },
+      });
+      nextCountryId = regionCountry?.id ?? null;
+    }
+  }
+
+  if (!nextCountryId || nextCountryId === team.countryId) {
+    return Promise.resolve();
+  }
+
+  await DatabaseClient.prisma.team.update({
+    where: { id: team.id },
+    data: { countryId: nextCountryId },
+  });
+
+  const nextCountry = await DatabaseClient.prisma.country.findUnique({
+    where: { id: nextCountryId },
+    select: { name: true, code: true },
+  });
+
+  Engine.Runtime.Instance.log.info(
+    'Updated team country identity: %s -> %s (%s)',
+    team.name,
+    nextCountry?.name ?? nextCountryId,
+    nextCountry?.code ?? 'unknown',
+  );
+
+  return Promise.resolve();
+}
+
+export async function recalculateAllTeamCountryIdentities() {
+  const teams = await DatabaseClient.prisma.team.findMany({
+    select: { id: true },
+  });
+
+  for (const team of teams) {
+    await recalculateTeamCountryIdentity(team.id);
+  }
+
+  return Promise.resolve();
+}
+
 function selectCountryAwareOfferPool<T extends { id: number; countryId: number }>(
   teams: T[],
   playerCountryId: number | null | undefined,
@@ -4127,6 +4263,7 @@ async function processNPCContractExtensions() {
       }
 
       const sameFed = team.country?.continent?.federationId;
+      const teamRegionCode = getTeamRegionCode(team);
       const freeAgents = await prisma.player.findMany({
         where: { teamId: null, userControlled: false },
         include: { country: { include: { continent: true } } },
@@ -4140,8 +4277,8 @@ async function processNPCContractExtensions() {
         .filter((p) => !desiredRole || normalizeRole(p.role) === desiredRole)
         .filter(
           (p) =>
-            p.countryId === team.countryId ||
-            (sameFed != null && p.country?.continent?.federationId === sameFed),
+            matchesTeamCountryPreference(team, p) ||
+            (teamRegionCode == null && sameFed != null && p.country?.continent?.federationId === sameFed),
         )
         .sort((a, b) => (b.xp || 0) - (a.xp || 0))[0]
         || freeAgents
@@ -4230,8 +4367,8 @@ async function processNPCContractExtensions() {
         .filter((p) => !desiredRole || normalizeRole(p.role) === desiredRole)
         .filter(
           (p) =>
-            p.countryId === team.countryId ||
-            (sameFed != null && p.country?.continent?.federationId === sameFed),
+            matchesTeamCountryPreference(team, p) ||
+            (teamRegionCode == null && sameFed != null && p.country?.continent?.federationId === sameFed),
         )
         .sort((a, b) => (a.xp || 0) - (b.xp || 0))[0];
 
@@ -4260,6 +4397,8 @@ async function processNPCContractExtensions() {
 
       team.players.push({ ...donor, teamId: team.id, starter: true } as any);
     }
+
+    await recalculateTeamCountryIdentity(team.id);
   }
 
   const expired = await prisma.player.findMany({
@@ -4311,6 +4450,8 @@ async function processNPCContractExtensions() {
     if (player.starter) {
       await ensureNPCStarterFloorAndAwper(player.teamId, player.role);
     }
+
+    await recalculateTeamCountryIdentity(player.teamId);
   }
 
   const horizon = addDays(now, Constants.PlayerContractSettings.EXTENSION_EVAL_DAYS_BEFORE_END ?? 30);
@@ -4422,7 +4563,7 @@ async function trySignNPCFreeAgent(params: {
     return Promise.resolve(false);
   }
 
-  const sameCountryCandidates = roleCandidates.filter((player) => player.countryId === from.countryId);
+  const sameCountryCandidates = roleCandidates.filter((player) => matchesTeamCountryPreference(from, player));
   let candidates = sameCountryCandidates;
 
   if (!candidates.length) {
@@ -4500,6 +4641,8 @@ async function trySignNPCFreeAgent(params: {
     startedAt: date,
   });
 
+  await recalculateTeamCountryIdentity(from.id);
+
   Engine.Runtime.Instance.log.info(
     '%s signed free agent %s (years=%d)',
     from.name,
@@ -4566,7 +4709,7 @@ export async function sendNPCTransferOffer() {
       const topXp = Math.max(...(team.players || []).map((p) => p.xp || 0), 0);
       let score = 0;
 
-      if (team.countryId === from.countryId) score += 40;
+      if (matchesTeamCountryPreference(from, team)) score += 40;
 
       // lower-division same-country high-XP talent bias
       if (team.tier < from.tier) {
@@ -4682,7 +4825,7 @@ export async function sendTransferOffer(
         score += 20;
       }
 
-      if (player.countryId === from.countryId) {
+      if (matchesTeamCountryPreference(from, player)) {
         score += Constants.TransferSettings.PBX_NPC_SAME_COUNTRY_BOOST;
 
         // allow picking strong same-country players from lower divisions
@@ -4808,7 +4951,7 @@ export async function onTransferParse(entry: Calendar) {
 
   let playerAcceptPbx = 60;
   playerAcceptPbx += getExpiryBoost(transfer.target.contractEnd as any, profile.date);
-  if (transfer.target.countryId === transfer.from.countryId) playerAcceptPbx += 10;
+  if (matchesTeamCountryPreference(transfer.from as any, transfer.target as any)) playerAcceptPbx += 10;
 
   const listedDays = getListedDays(transfer.target as any, profile.date);
   const lowerTierOffer = transfer.from.tier < transfer.to.tier;
@@ -4916,6 +5059,9 @@ export async function onTransferParse(entry: Calendar) {
     tier: transfer.from.tier,
     startedAt: profile.date,
   });
+
+  await recalculateTeamCountryIdentity(transfer.from.id);
+  await recalculateTeamCountryIdentity(transfer.to.id);
 
   await DatabaseClient.prisma.calendar.create({
     data: {
@@ -5468,6 +5614,7 @@ export async function onPlayerContractExpire(entry: Calendar) {
 
   // Revert remaining USER matchdays for the old team back to NPC
   if (oldTeamId != null) {
+    await recalculateTeamCountryIdentity(oldTeamId);
     const futureMatches = await DatabaseClient.prisma.match.findMany({
       where: {
         date: { gte: today.toISOString() },

@@ -84,6 +84,15 @@ const pool = [] as Array<{
  */
 let activeId = 0;
 
+const mixedRegionCountries = [
+  { code: 'eu', name: 'Europe', continentCode: 'EU' },
+  { code: 'na', name: 'North America', continentCode: 'NA' },
+  { code: 'sa', name: 'South America', continentCode: 'SA' },
+  { code: 'as', name: 'Asia', continentCode: 'AS' },
+] as const;
+
+const mixedRegionCodes = new Set(['EU', 'NA', 'SA', 'AS']);
+
 /** @class */
 export default class DatabaseClient {
   /** @constant */
@@ -161,6 +170,113 @@ export default class DatabaseClient {
     });
   }
 
+  private static async repairCountryMetadata(prisma: PrismaClientExtended) {
+    const continents = await prisma.continent.findMany({
+      select: { id: true, code: true },
+    });
+    const continentIdByCode = new Map(continents.map((continent) => [continent.code.toUpperCase(), continent.id]));
+
+    for (const country of mixedRegionCountries) {
+      const continentId = continentIdByCode.get(country.continentCode);
+      if (!continentId) continue;
+
+      await prisma.country.upsert({
+        where: { code: country.code },
+        update: {
+          name: country.name,
+          continentId,
+        },
+        create: {
+          code: country.code,
+          name: country.name,
+          continentId,
+        },
+      });
+    }
+
+    const europeContinentId = continentIdByCode.get('EU');
+    if (europeContinentId) {
+      await prisma.country.update({
+        where: { code: 'TR' },
+        data: { continentId: europeContinentId },
+      }).catch(() => Promise.resolve());
+    }
+  }
+
+  private static async recalculateAllTeamCountryIdentities(prisma: PrismaClientExtended) {
+    const teams = await prisma.team.findMany({
+      select: {
+        id: true,
+        countryId: true,
+        players: {
+          where: { starter: true },
+          select: {
+            countryId: true,
+            country: {
+              select: {
+                continent: {
+                  select: {
+                    code: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const regionCountryIds = new Map<string, number>();
+    for (const regionCode of mixedRegionCountries.map((country) => country.code)) {
+      const regionCountry = await prisma.country.findUnique({
+        where: { code: regionCode },
+        select: { id: true },
+      });
+      if (regionCountry) {
+        regionCountryIds.set(regionCode.toUpperCase(), regionCountry.id);
+      }
+    }
+
+    for (const team of teams) {
+      if (team.players.length < 3) {
+        continue;
+      }
+
+      const countryCounts = new Map<number, number>();
+      const continentCounts = new Map<string, number>();
+
+      for (const player of team.players) {
+        countryCounts.set(player.countryId, (countryCounts.get(player.countryId) ?? 0) + 1);
+        const continentCode = player.country?.continent?.code?.toUpperCase();
+        if (continentCode) {
+          continentCounts.set(continentCode, (continentCounts.get(continentCode) ?? 0) + 1);
+        }
+      }
+
+      const dominantCountry = [...countryCounts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+      let nextCountryId = dominantCountry?.[1] >= 3 ? dominantCountry[0] : null;
+
+      if (!nextCountryId) {
+        const dominantContinent = [...continentCounts.entries()]
+          .filter(([code]) => mixedRegionCodes.has(code))
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
+
+        if (dominantContinent?.[1] >= 3) {
+          nextCountryId = regionCountryIds.get(dominantContinent[0]) ?? null;
+        }
+      }
+
+      if (!nextCountryId || nextCountryId === team.countryId) {
+        continue;
+      }
+
+      await prisma.team.update({
+        where: { id: team.id },
+        data: { countryId: nextCountryId },
+      });
+    }
+  }
+
   /**
    * Sets up the application database files
    * and initializes the Prisma client.
@@ -211,6 +327,9 @@ export default class DatabaseClient {
 
     // update the active db id
     activeId = id;
+
+    await DatabaseClient.repairCountryMetadata(pool[id].client);
+    await DatabaseClient.recalculateAllTeamCountryIdentities(pool[id].client);
 
     if (saveMeta.created && id !== 0) {
       await DatabaseClient.ensureInitialCareerStints(pool[id].client);
