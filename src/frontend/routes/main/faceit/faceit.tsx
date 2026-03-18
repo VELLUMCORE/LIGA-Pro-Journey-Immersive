@@ -138,6 +138,19 @@ const isAwperRole = (role?: string | null) => {
   return normalized === "AWPER" || normalized === "SNIPER";
 };
 
+const formatRecentMatchDate = (value?: string | Date | null) => {
+  if (!value) return null;
+
+  const parsed = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    day: "numeric",
+    year: "2-digit",
+  }).format(parsed);
+};
+
 // ---------------------------------------------------------------------------
 // MAIN COMPONENT
 // ---------------------------------------------------------------------------
@@ -2061,6 +2074,7 @@ function NormalFaceitBody({
             {recent.map((m) => {
               const label = Util.convertMapPool(m.map, gameEnum);
               const imgSrc = Util.convertMapPool(m.map, gameEnum, true);
+              const formattedMatchDate = formatRecentMatchDate(m.date);
 
               const eloClass =
                 m.eloDelta == null
@@ -2103,7 +2117,7 @@ function NormalFaceitBody({
                     </div>
 
                     {/* TEXT CONTENT */}
-                    <div className="flex-1 px-3 py-2 flex items-center justify-between gap-3">
+                    <div className="relative flex-1 px-3 py-2 flex items-center justify-between gap-3">
                       <div className="flex flex-col">
                         <span
                           className={`
@@ -2129,6 +2143,12 @@ function NormalFaceitBody({
                         )}
                       </div>
 
+
+                      {formattedMatchDate && (
+                        <span className="absolute right-3 top-2 text-[10px] leading-none text-neutral-500">
+                          {formattedMatchDate}
+                        </span>
+                      )}
 
                       {/* RESULT PILL */}
                       <div className="flex items-center">
