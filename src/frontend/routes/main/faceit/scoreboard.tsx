@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { AppStateContext } from "@liga/frontend/redux";
 import { Constants } from "@liga/shared";
 
 export interface ScoreboardProps {
@@ -34,6 +35,9 @@ export interface MatchRecord {
 }
 
 export default function Scoreboard({ matchId }: ScoreboardProps) {
+  const { state } = React.useContext(AppStateContext);
+  const currentPlayerId =
+    state.profile?.playerId ?? state.profile?.player?.id ?? null;
   const [loading, setLoading] = useState(true);
   const [match, setMatch] = useState<MatchRecord | null>(null);
   const [players, setPlayers] = useState<PlayerRow[]>([]);
@@ -78,14 +82,8 @@ export default function Scoreboard({ matchId }: ScoreboardProps) {
     );
   }
 
-  // ------------------------------
-  // EXTRACT TEAM SCORES
-  // ------------------------------
-
-  const scoreTeam1 =
-    match.competitors?.find((c) => c.teamId === 1)?.score ?? 0;
-  const scoreTeam2 =
-    match.competitors?.find((c) => c.teamId === 2)?.score ?? 0;
+  const scoreTeam1 = match.competitors?.find((c) => c.teamId === 1)?.score ?? 0;
+  const scoreTeam2 = match.competitors?.find((c) => c.teamId === 2)?.score ?? 0;
 
   const payload = match.payload ? JSON.parse(match.payload) : {};
   const teamA = payload.teamA || [];
@@ -106,10 +104,6 @@ export default function Scoreboard({ matchId }: ScoreboardProps) {
   const userWon = userScore > oppScore;
   const oppWon = oppScore > userScore;
 
-  // ------------------------------
-  // BUILD FACEIT TEAM SPLIT
-  // ------------------------------
-
   let teamAIds = new Set<number>();
   let teamBIds = new Set<number>();
 
@@ -127,17 +121,19 @@ export default function Scoreboard({ matchId }: ScoreboardProps) {
     console.warn("Failed to parse FACEIT JSON:", err);
   }
 
-  // ------------------------------
-  // BUILD PLAYER STATS
-  // ------------------------------
-
   const stats = players.map((p) => {
-    const kills = events.filter((e) => e.type === "playerkilled" && e.attackerId === p.id).length;
-    const deaths = events.filter((e) => e.type === "playerkilled" && e.victimId === p.id).length;
-    const assists = events.filter((e) => e.type === "playerassisted" && e.assistId === p.id).length;
+    const kills = events.filter(
+      (e) => e.type === "playerkilled" && e.attackerId === p.id,
+    ).length;
+    const deaths = events.filter(
+      (e) => e.type === "playerkilled" && e.victimId === p.id,
+    ).length;
+    const assists = events.filter(
+      (e) => e.type === "playerassisted" && e.assistId === p.id,
+    ).length;
 
     const headshots = events.filter(
-      (e) => e.type === "playerkilled" && e.attackerId === p.id && e.headshot
+      (e) => e.type === "playerkilled" && e.attackerId === p.id && e.headshot,
     ).length;
 
     const hsPercent = kills > 0 ? Math.round((headshots / kills) * 100) : 0;
@@ -153,10 +149,6 @@ export default function Scoreboard({ matchId }: ScoreboardProps) {
       kdRatio,
     };
   });
-
-  // ------------------------------
-  // SPLIT TEAMS
-  // ------------------------------
 
   const rawTeamAStats =
     teamAIds.size > 0 ? stats.filter((s) => teamAIds.has(s.id)) : [];
@@ -175,10 +167,6 @@ export default function Scoreboard({ matchId }: ScoreboardProps) {
 
   const userTeamStats = isUserTeam1 ? finalA : finalB;
   const oppTeamStats = isUserTeam1 ? finalB : finalA;
-
-  // ------------------------------
-  // SORTING
-  // ------------------------------
 
   const sortPlayers = (arr: typeof finalA) =>
     [...arr].sort((a, b) => {
@@ -213,11 +201,11 @@ export default function Scoreboard({ matchId }: ScoreboardProps) {
     <div className="p-6 flex flex-col gap-8">
       <h2 className="text-3xl font-bold text-center mb-2">Scoreboard</h2>
 
-      {/* BIG FINAL SCORE */}
       <div className="flex justify-center items-center text-center mb-6">
         <span
-          className={`text-5xl font-extrabold mx-4 ${userWon ? "text-green-400" : "text-gray-300"
-            }`}
+          className={`text-5xl font-extrabold mx-4 ${
+            userWon ? "text-green-400" : "text-gray-300"
+          }`}
         >
           {userScore}
         </span>
@@ -225,16 +213,25 @@ export default function Scoreboard({ matchId }: ScoreboardProps) {
         <span className="text-4xl font-bold text-gray-400">–</span>
 
         <span
-          className={`text-5xl font-extrabold mx-4 ${oppWon ? "text-green-400" : "text-gray-300"
-            }`}
+          className={`text-5xl font-extrabold mx-4 ${
+            oppWon ? "text-green-400" : "text-gray-300"
+          }`}
         >
           {oppScore}
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-8">
-        <TeamTable name={leftName} stats={sortedUserTeam} />
-        <TeamTable name={rightName} stats={sortedOppTeam} />
+        <TeamTable
+          name={leftName}
+          stats={sortedUserTeam}
+          currentPlayerId={currentPlayerId}
+        />
+        <TeamTable
+          name={rightName}
+          stats={sortedOppTeam}
+          currentPlayerId={currentPlayerId}
+        />
       </div>
     </div>
   );
@@ -242,6 +239,7 @@ export default function Scoreboard({ matchId }: ScoreboardProps) {
 
 interface TeamTableProps {
   name: string;
+  currentPlayerId: number | null;
   stats: {
     id: number;
     name: string;
@@ -253,7 +251,7 @@ interface TeamTableProps {
   }[];
 }
 
-function TeamTable({ name, stats }: TeamTableProps) {
+function TeamTable({ name, stats, currentPlayerId }: TeamTableProps) {
   return (
     <div className="faceit-scoreboard">
       <h3 className="text-xl font-semibold mb-4 text-center">{name}</h3>
@@ -271,20 +269,29 @@ function TeamTable({ name, stats }: TeamTableProps) {
         </thead>
 
         <tbody>
-          {stats.map((p) => (
-            <tr key={p.id} className="border-t border-gray-800">
-              <td className="py-2 text-left">{p.name}</td>
-              <td className="py-2 text-center">{p.kills}</td>
-              <td className="py-2 text-center">{p.deaths}</td>
-              <td className="py-2 text-center">{p.assists}</td>
-              <td className="py-2 text-center">{p.hs}%</td>
-              <td className="py-2 text-center">
-                {p.deaths === 0
-                  ? p.kills.toFixed(2)
-                  : (p.kills / p.deaths).toFixed(2)}
-              </td>
-            </tr>
-          ))}
+          {stats.map((p) => {
+            const isCurrentPlayer = currentPlayerId === p.id;
+
+            return (
+              <tr
+                key={p.id}
+                className={`border-t border-gray-800 ${
+                  isCurrentPlayer ? "bg-white/4" : ""
+                }`}
+              >
+                <td className="py-2 text-left">{p.name}</td>
+                <td className="py-2 text-center">{p.kills}</td>
+                <td className="py-2 text-center">{p.deaths}</td>
+                <td className="py-2 text-center">{p.assists}</td>
+                <td className="py-2 text-center">{p.hs}%</td>
+                <td className="py-2 text-center">
+                  {p.deaths === 0
+                    ? p.kills.toFixed(2)
+                    : (p.kills / p.deaths).toFixed(2)}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
