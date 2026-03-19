@@ -589,11 +589,17 @@ export default function registerFaceitHandlers() {
   // ------------------------------------------------------
   // GET MATCH DATA (scoreboard)
   // ------------------------------------------------------
-  ipcMain.handle("faceit:getMatchData", async (_, matchId: number | string) => {
+  ipcMain.handle("faceit:getMatchData", async (_, matchId: number | string | null | undefined) => {
     await DatabaseClient.connect();
     const prisma = DatabaseClient.prisma;
 
     const numericId = Number(matchId);
+
+    if (!Number.isInteger(numericId) || numericId <= 0) {
+      log.warn(`faceit:getMatchData called with invalid match id: ${String(matchId)}`);
+      return { match: null, players: [], events: [] };
+    }
+
     const match = await prisma.match.findFirst({
       where: { id: numericId },
       include: {

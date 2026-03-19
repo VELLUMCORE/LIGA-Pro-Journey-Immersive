@@ -1252,19 +1252,22 @@ export const TransferSettings = {
   PBX_NPC_CONSIDER: 50,
 
   // how likely each tier is to send an offer (open -> pro)
-  PBX_NPC_TIER: [40, 30, 25, 25, 25],
+  PBX_NPC_TIER: [40, 30, 30, 30, 30],
 
   // chance to consider cross-federation bids for top profiles
   PBX_NPC_CROSS_FED_TOP: 4,
 
   // chance an NPC team signs a free agent instead of trading with another team
-  PBX_NPC_FREE_AGENT_SIGN: 20,
+  PBX_NPC_FREE_AGENT_SIGN: 10,
+
+  // chance an NPC free-agent pickup stays in the same country when a matching option exists
+  PBX_NPC_FREE_AGENT_SAME_COUNTRY: 85,
 
   // when no suitable same-country free agent is found, chance to sign from same federation
-  PBX_NPC_FREE_AGENT_SAME_FED: 40,
+  PBX_NPC_FREE_AGENT_SAME_FED: 10,
 
   // preference boost for same-country offers
-  PBX_NPC_SAME_COUNTRY_BOOST: 65,
+  PBX_NPC_SAME_COUNTRY_BOOST: 85,
 
   // players with this many days left receive expiry weighting boost
   PBX_NPC_EXPIRY_WINDOW_MIN_DAYS: 90,
