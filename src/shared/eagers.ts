@@ -98,7 +98,12 @@ export const matchEvents = {
         },
       },
     },
-    players: { include: { country: true } },
+    players: {
+      include: {
+        country: true,
+        careerStints: true,
+      },
+    },
   },
 };
 

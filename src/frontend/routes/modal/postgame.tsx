@@ -4,7 +4,6 @@
  * @module
  */
 import React from 'react';
-import { intersectionBy } from 'lodash';
 import { useLocation } from 'react-router-dom';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
@@ -97,15 +96,32 @@ function getRoundWinIcon(result: string) {
   }
 }
 
+function isWithinStint(date: Date, startedAt: Date | string, endedAt: Date | string | null) {
+  const start = new Date(startedAt);
+  start.setHours(0, 0, 0, 0);
+
+  const end = endedAt ? new Date(endedAt) : null;
+  if (end) end.setHours(23, 59, 59, 999);
+
+  return start <= date && (!end || end >= date);
+}
+
 /**
  * @param props Root props.
  */
 function Scoreboard(props: ScoreboardProps) {
   const t = useTranslation('windows');
-  const players = React.useMemo(
-    () => intersectionBy(props.competitor.team.players, props.match.players, 'name'),
-    [props.competitor.team.players, props.match.players],
-  );
+  const players = React.useMemo(() => {
+    const matchDate = new Date(props.match.date);
+
+    return props.match.players.filter((player) =>
+      player.careerStints?.some(
+        (stint) =>
+          stint.teamId === props.competitor.team.id &&
+          isWithinStint(matchDate, stint.startedAt, stint.endedAt),
+      ),
+    );
+  }, [props.competitor.team.id, props.match.date, props.match.players]);
   const matchEvents = React.useMemo(
     () =>
       props.matchGame
