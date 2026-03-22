@@ -32,6 +32,8 @@ interface PlayerCardProps extends React.ComponentProps<'article'> {
   className?: string;
   compact?: boolean;
   noStats?: boolean;
+  showStatusBadge?: boolean;
+  wideCompactIdentity?: boolean;
 
   // Kept for type-compatibility, but no longer rendered as buttons
   onClickStarter?: () => void;
@@ -89,6 +91,8 @@ export function XPBar(props: XPBarProps) {
  * @exports
  */
 export default function (props: PlayerCardProps) {
+  const showStatusBadge = props.showStatusBadge ?? true;
+  const wideCompactIdentity = props.wideCompactIdentity ?? false;
 
   const roleRaw = props.player.role;
 
@@ -106,7 +110,12 @@ export default function (props: PlayerCardProps) {
     return (
       <article
         className={cx(
-          'grid grid-cols-4 items-center divide-x border',
+          'grid items-center divide-x border',
+          showStatusBadge
+            ? 'grid-cols-4'
+            : wideCompactIdentity
+              ? 'grid-cols-[80px_minmax(0,1.8fr)_92px]'
+              : 'grid-cols-3',
           'divide-base-content/10 border-base-content/10 bg-base-200 border-b-0',
           props.className,
         )}
@@ -124,16 +133,18 @@ export default function (props: PlayerCardProps) {
             <span>&nbsp;{props.player.country.name}</span>
           </p>
         </aside>
-        <aside className="center px-2">
-          <span
-            className={cx(
-              'inline-flex h-6 min-w-[76px] items-center justify-center rounded px-2 text-[10px] leading-none font-semibold tracking-wide uppercase',
-              props.player.starter ? 'bg-[#2f4660] text-[#9fc9f3]' : 'bg-[#7a2430] text-[#ffdce3]',
-            )}
-          >
-            {props.player.starter ? 'STARTER' : 'BENCHED'}
-          </span>
-        </aside>
+        {showStatusBadge && (
+          <aside className="center px-2">
+            <span
+              className={cx(
+                'inline-flex h-6 min-w-[76px] items-center justify-center rounded px-2 text-[10px] leading-none font-semibold tracking-wide uppercase',
+                props.player.starter ? 'bg-[#2f4660] text-[#9fc9f3]' : 'bg-[#7a2430] text-[#ffdce3]',
+              )}
+            >
+              {props.player.starter ? 'STARTER' : 'BENCHED'}
+            </span>
+          </aside>
+        )}
         <aside className="stack-y center gap-0 px-2">
           <p className="text-muted text-xs">{t('playerCard.totalXP')}</p>
           <p className="text-2xl! font-black">

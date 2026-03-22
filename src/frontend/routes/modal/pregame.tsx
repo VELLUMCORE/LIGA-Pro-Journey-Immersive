@@ -160,6 +160,8 @@ export default function () {
                             game={settingsAll.general.game}
                             player={player}
                             noStats={player.id === state.profile.playerId}
+                            showStatusBadge={false}
+                            wideCompactIdentity
                             onClickStarter={
                               isUserTeam &&
                               player.id !== state.profile.playerId &&
