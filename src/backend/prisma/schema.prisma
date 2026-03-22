@@ -149,6 +149,7 @@ model Federation {
   leagues             League[]
   competitions        Competition[]
   continents          Continent[]
+  teams               Team[]              @relation("competitionFederation")
 }
 
 model Game {
@@ -399,6 +400,10 @@ model Team {
   // belongs to
   country             Country             @relation(fields: [countryId], references: [id])
   countryId           Int
+  competitionFederation   Federation?     @relation("competitionFederation", fields: [competitionFederationId], references: [id])
+  competitionFederationId Int?
+
+  @@index([competitionFederationId])
 }
 
 model Tier {

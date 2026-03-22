@@ -112,6 +112,7 @@ export const profile = {
   include: {
     team: {
       include: {
+        competitionFederation: true,
         personas: true,
         players: player,
       },
@@ -139,6 +140,7 @@ export const shortlist = {
 /** @constant */
 export const team = {
   include: {
+    competitionFederation: true,
     country: {
       include: {
         continent: {

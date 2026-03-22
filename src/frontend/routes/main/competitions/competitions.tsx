@@ -165,6 +165,16 @@ export default function () {
     if (hasQueryParams) return;
     if (!state.profile || initializedFromProfile) return;
 
+    const competitionFederationId = state.profile.team?.competitionFederationId ?? null;
+    if (competitionFederationId) {
+      setSelectedFederationId(competitionFederationId);
+      if (state.profile.season > 0) {
+        setSelectedSeasonId(state.profile.season);
+      }
+      setInitializedFromProfile(true);
+      return;
+    }
+
     // Prefer team country if available, otherwise player's country.
     const playerCountryId =
       state.profile.team?.countryId ?? state.profile.player?.countryId ?? null;

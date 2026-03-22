@@ -1449,6 +1449,36 @@ export const Items: Array<Item> = [
   },
 ];
 
+
+function buildCompetitionFederationWhere(
+  federationSlug: Constants.FederationSlug,
+  countryFilter?: Prisma.CountryWhereInput | null,
+): Prisma.TeamWhereInput {
+  return {
+    OR: [
+      {
+        competitionFederation: {
+          is: {
+            slug: federationSlug,
+          },
+        },
+        ...(countryFilter ? { country: countryFilter } : {}),
+      },
+      {
+        competitionFederationId: null,
+        country: {
+          ...(countryFilter ? countryFilter : {}),
+          continent: {
+            federation: {
+              slug: federationSlug,
+            },
+          },
+        },
+      },
+    ],
+  };
+}
+
 async function getTeamsFromCompetitionEntry(
   entry: Entry,
   federation: Prisma.FederationGetPayload<unknown>,
@@ -1471,6 +1501,7 @@ async function getTeamsFromCompetitionEntry(
 
   const profile = await DatabaseClient.prisma.profile.findFirst();
   const isWorldLeagueEntry = entry.from === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE;
+  const targetFederationSlug = (entry.federationSlug || federation.slug) as Constants.FederationSlug;
   const competition = await DatabaseClient.prisma.competition.findFirst({
     where: {
       season: profile.season + (entry.season || 0),
@@ -1484,7 +1515,7 @@ async function getTeamsFromCompetitionEntry(
         ? {}
         : {
           federation: {
-            slug: entry.federationSlug || federation.slug,
+            slug: targetFederationSlug,
           },
         }),
     },
@@ -1509,14 +1540,10 @@ async function getTeamsFromCompetitionEntry(
         id: {
           in: teamIds,
         },
-        country: {
-          ...(countryFilter ? countryFilter : {}),
-          continent: {
-            federation: {
-              slug: entry.federationSlug,
-            },
-          },
-        },
+        ...buildCompetitionFederationWhere(
+          entry.federationSlug,
+          countryFilter,
+        ),
       },
       select: {
         id: true,
@@ -1534,25 +1561,22 @@ async function getTeamsFromCompetitionEntry(
   }
 
   let competitors = competition.competitors;
-  if (countryFilter) {
-    const filteredTeams = await DatabaseClient.prisma.team.findMany({
-      where: {
-        id: {
-          in: competitors.map((competitor) => competitor.teamId),
-        },
-        country: {
-          ...(countryFilter ? countryFilter : {}),
-        },
+  const federationFilteredTeams = await DatabaseClient.prisma.team.findMany({
+    where: {
+      id: {
+        in: competitors.map((competitor) => competitor.teamId),
       },
-      select: {
-        id: true,
-      },
-    });
-    if (filteredTeams.length) {
-      const includedIds = new Set(filteredTeams.map((team) => team.id));
-      competitors = competitors.filter((competitor) => includedIds.has(competitor.teamId));
-    }
-  }
+      ...buildCompetitionFederationWhere(
+        targetFederationSlug,
+        countryFilter,
+      ),
+    },
+    select: {
+      id: true,
+    },
+  });
+  const federationIncludedIds = new Set(federationFilteredTeams.map((team) => team.id));
+  competitors = competitors.filter((competitor) => federationIncludedIds.has(competitor.teamId));
 
   competitors = competitors.slice(
     entry.start < 0 ? entry.start : Math.max(0, entry.start - 1),
@@ -1616,17 +1640,15 @@ async function handleFallbackAction(
         },
       }
       : null;
+  const targetFederationSlug = (entry.federationSlug || federation.slug) as Constants.FederationSlug;
+
   if (entry.target === Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1) {
     const teams = await DatabaseClient.prisma.team.findMany({
       where: {
-        country: {
-          ...(countryFilter ? countryFilter : {}),
-          continent: {
-            federation: {
-              slug: Constants.FederationSlug.ESPORTS_AMERICAS,
-            },
-          },
-        },
+        ...buildCompetitionFederationWhere(
+          Constants.FederationSlug.ESPORTS_AMERICAS,
+          countryFilter,
+        ),
       },
       orderBy: {
         elo: 'desc',
@@ -1640,14 +1662,10 @@ async function handleFallbackAction(
   if (entry.target === Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1) {
     const teams = await DatabaseClient.prisma.team.findMany({
       where: {
-        country: {
-          ...(countryFilter ? countryFilter : {}),
-          continent: {
-            federation: {
-              slug: Constants.FederationSlug.ESPORTS_EUROPA,
-            },
-          },
-        },
+        ...buildCompetitionFederationWhere(
+          Constants.FederationSlug.ESPORTS_EUROPA,
+          countryFilter,
+        ),
       },
       orderBy: {
         elo: 'desc',
@@ -1661,14 +1679,10 @@ async function handleFallbackAction(
   if (entry.target === Constants.TierSlug.MAJOR_AMERICAS_RMR) {
     const teams = await DatabaseClient.prisma.team.findMany({
       where: {
-        country: {
-          ...(countryFilter ? countryFilter : {}),
-          continent: {
-            federation: {
-              slug: Constants.FederationSlug.ESPORTS_AMERICAS,
-            },
-          },
-        },
+        ...buildCompetitionFederationWhere(
+          Constants.FederationSlug.ESPORTS_AMERICAS,
+          countryFilter,
+        ),
       },
       orderBy: {
         elo: 'desc',
@@ -1682,14 +1696,10 @@ async function handleFallbackAction(
   if (entry.target === Constants.TierSlug.MAJOR_EUROPE_RMR_A) {
     const teams = await DatabaseClient.prisma.team.findMany({
       where: {
-        country: {
-          ...(countryFilter ? countryFilter : {}),
-          continent: {
-            federation: {
-              slug: Constants.FederationSlug.ESPORTS_EUROPA,
-            },
-          },
-        },
+        ...buildCompetitionFederationWhere(
+          Constants.FederationSlug.ESPORTS_EUROPA,
+          countryFilter,
+        ),
       },
       orderBy: {
         elo: 'desc',
@@ -1704,14 +1714,10 @@ async function handleFallbackAction(
   if (entry.target === Constants.TierSlug.MAJOR_EUROPE_RMR_B) {
     const teams = await DatabaseClient.prisma.team.findMany({
       where: {
-        country: {
-          ...(countryFilter ? countryFilter : {}),
-          continent: {
-            federation: {
-              slug: Constants.FederationSlug.ESPORTS_EUROPA,
-            },
-          },
-        },
+        ...buildCompetitionFederationWhere(
+          Constants.FederationSlug.ESPORTS_EUROPA,
+          countryFilter,
+        ),
       },
       orderBy: {
         elo: 'desc',
@@ -1752,14 +1758,10 @@ async function handleFallbackAction(
         id: {
           notIn: [...occupiedIds],
         },
-        country: {
-          ...(countryFilter ? countryFilter : {}),
-          continent: {
-            federation: {
-              slug: entry.federationSlug || federation.slug,
-            },
-          },
-        },
+        ...buildCompetitionFederationWhere(
+          targetFederationSlug,
+          countryFilter,
+        ),
       },
       orderBy: {
         prestige: 'desc',
@@ -1772,14 +1774,10 @@ async function handleFallbackAction(
   const teams = await DatabaseClient.prisma.team.findMany({
     where: {
       prestige: Constants.Prestige.findIndex((prestige) => prestige === entry.target),
-      country: {
-        ...(countryFilter ? countryFilter : {}),
-        continent: {
-          federation: {
-            slug: entry.federationSlug || federation.slug,
-          },
-        },
-      },
+      ...buildCompetitionFederationWhere(
+        targetFederationSlug,
+        countryFilter,
+      ),
     },
   });
 
@@ -1991,13 +1989,9 @@ export async function parse(
         id: {
           notIn: [...new Set([...competitors, ...excludedCompetitors].map((team) => team.id))],
         },
-        country: {
-          continent: {
-            federation: {
-              slug: federation.slug,
-            },
-          },
-        },
+        ...buildCompetitionFederationWhere(
+          federation.slug as Constants.FederationSlug,
+        ),
       },
       orderBy: {
         elo: 'desc',

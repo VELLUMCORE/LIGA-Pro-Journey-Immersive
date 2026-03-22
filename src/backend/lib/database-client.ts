@@ -43,6 +43,10 @@ import { PrismaClient } from '@prisma/client';
 import { glob } from 'glob';
 import { Constants, Eagers, Util, is } from '@liga/shared';
 
+const TEAM_COMPETITION_FEDERATION_OVERRIDES: Partial<Record<string, Constants.FederationSlug>> = {
+  ego: Constants.FederationSlug.ESPORTS_AMERICAS,
+};
+
 /** @interface */
 interface PrismaMigration {
   id: string;
@@ -59,6 +63,7 @@ interface InitSaveResult {
 }
 
 interface SaveSchemaProbe {
+  hasCompetitionFederationColumn: boolean;
   hasMigrationsTable: boolean;
   hasProfileTable: boolean;
 }
@@ -203,6 +208,105 @@ export default class DatabaseClient {
     }
   }
 
+  private static async getRootSaveCompetitionFederationIds(saveId: number) {
+    if (saveId === 0) {
+      return new Map<string, number>();
+    }
+
+    const rootSavePath = path.join(DatabaseClient.basePath, Util.getSaveFileName(0));
+    if (!fs.existsSync(rootSavePath)) {
+      return new Map<string, number>();
+    }
+
+    const schema = await DatabaseClient.probeSaveSchema(rootSavePath);
+    if (!schema.hasCompetitionFederationColumn) {
+      return new Map<string, number>();
+    }
+
+    const rootPrisma = new PrismaClient({
+      datasources: {
+        db: {
+          url: `file:${rootSavePath}?connection_limit=1`,
+        },
+      },
+    });
+
+    try {
+      const teams = await rootPrisma.team.findMany({
+        where: {
+          competitionFederationId: {
+            not: null,
+          },
+        },
+        select: {
+          slug: true,
+          competitionFederationId: true,
+        },
+      });
+
+      return new Map(
+        teams
+          .filter((team) => team.competitionFederationId != null)
+          .map((team) => [team.slug, team.competitionFederationId as number]),
+      );
+    } finally {
+      await rootPrisma.$disconnect();
+    }
+  }
+
+  private static async syncTeamCompetitionFederations(
+    prisma: PrismaClientExtended,
+    saveId: number,
+  ) {
+    const rootSaveCompetitionFederationIds = await DatabaseClient.getRootSaveCompetitionFederationIds(
+      saveId,
+    );
+    const teams = await prisma.team.findMany({
+      select: {
+        id: true,
+        slug: true,
+        competitionFederationId: true,
+        country: {
+          select: {
+            continent: {
+              select: {
+                federationId: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const federations = await prisma.federation.findMany({
+      select: { id: true, slug: true },
+    });
+    const federationIdBySlug = new Map(
+      federations.map((federation) => [federation.slug, federation.id]),
+    );
+
+    for (const team of teams) {
+      const rootSaveCompetitionFederationId = rootSaveCompetitionFederationIds.get(team.slug);
+      const overrideSlug = TEAM_COMPETITION_FEDERATION_OVERRIDES[team.slug];
+      const nextCompetitionFederationId = rootSaveCompetitionFederationId
+        ?? (overrideSlug ? federationIdBySlug.get(overrideSlug) : null)
+        ?? team.country?.continent?.federationId
+        ?? null;
+
+      if (
+        !nextCompetitionFederationId ||
+        nextCompetitionFederationId === team.competitionFederationId
+      ) {
+        continue;
+      }
+
+      await prisma.team.update({
+        where: { id: team.id },
+        data: { competitionFederationId: nextCompetitionFederationId },
+      });
+    }
+  }
+
   private static async recalculateAllTeamCountryIdentities(prisma: PrismaClientExtended) {
     const teams = await prisma.team.findMany({
       select: {
@@ -329,6 +433,7 @@ export default class DatabaseClient {
     activeId = id;
 
     await DatabaseClient.repairCountryMetadata(pool[id].client);
+    await DatabaseClient.syncTeamCompetitionFederations(pool[id].client, id);
     await DatabaseClient.recalculateAllTeamCountryIdentities(pool[id].client);
 
     if (saveMeta.created && id !== 0) {
@@ -787,7 +892,7 @@ export default class DatabaseClient {
     try {
       const tables = await new Promise<string[]>((resolve) =>
         cnx.all(
-          `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('_prisma_migrations', 'Profile')`,
+          `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('_prisma_migrations', 'Profile', 'Team')`,
           (error, rows: Array<{ name: string }>) => {
             if (error) {
               DatabaseClient.log.warn('Failed probing save schema for %s: %s', savePath, error);
@@ -798,8 +903,28 @@ export default class DatabaseClient {
           },
         ),
       );
+      const hasCompetitionFederationColumn = tables.includes('Team')
+        ? await new Promise<boolean>((resolve) =>
+          cnx.all(
+            `PRAGMA table_info("Team")`,
+            (error, rows: Array<{ name: string }>) => {
+              if (error) {
+                DatabaseClient.log.warn(
+                  'Failed probing Team columns for %s: %s',
+                  savePath,
+                  error,
+                );
+                return resolve(false);
+              }
+
+              resolve((rows ?? []).some((row) => row.name === 'competitionFederationId'));
+            },
+          ),
+        )
+        : false;
 
       return {
+        hasCompetitionFederationColumn,
         hasMigrationsTable: tables.includes('_prisma_migrations'),
         hasProfileTable: tables.includes('Profile'),
       };
