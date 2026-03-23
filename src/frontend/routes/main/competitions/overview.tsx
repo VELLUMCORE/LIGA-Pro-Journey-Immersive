@@ -180,7 +180,16 @@ export default function () {
             )}
             {winners.length > 0 && (
               <tr>
-                <td>{winners[0].team.name}</td>
+                <td>
+                  <span className="inline-flex items-center gap-2">
+                    <img
+                      alt={`${winners[0].team.name} logo`}
+                      src={winners[0].team.blazon}
+                      className="size-4"
+                    />
+                    <span>{winners[0].team.name}</span>
+                  </span>
+                </td>
                 <td>
                   {t('shared.season')} {competition.season - 1}
                 </td>
@@ -320,7 +329,14 @@ export default function () {
               )}
               {winners.map((winner, idx) => (
                 <tr key={winner.id + '__winner'}>
-                  <td>{winner.team.name}</td>
+                  <td>
+                    <span className="inline-flex items-center gap-2">
+                      <img alt={`${winner.team.name} logo`} src={winner.team.blazon} className="size-4" />
+                      <Link to={`/teams?teamId=${winner.team.id}`} className="link-hover">
+                        {winner.team.name}
+                      </Link>
+                    </span>
+                  </td>
                   <td>
                     {t('shared.season')} {competition.season - (idx + 1)}
                   </td>
