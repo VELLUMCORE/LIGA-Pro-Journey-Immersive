@@ -48,13 +48,42 @@ export const Items: Array<Item> = [
     tierSlug: Constants.TierSlug.LEAGUE_PRO,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [
-      // ESL Pro League: retain top 16
+      // ESL Pro League: retain the best-finished teams per federation
+      // to preserve the regional slot split (EU 9 / AM 4 / AS 2 / OCE 1).
       {
         action: Action.INCLUDE,
         from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
         target: Constants.TierSlug.LEAGUE_PRO,
+        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
         start: 1,
-        end: 16,
+        end: 9,
+        season: -1,
+      },
+      {
+        action: Action.INCLUDE,
+        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+        target: Constants.TierSlug.LEAGUE_PRO,
+        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
+        start: 1,
+        end: 4,
+        season: -1,
+      },
+      {
+        action: Action.INCLUDE,
+        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+        target: Constants.TierSlug.LEAGUE_PRO,
+        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
+        start: 1,
+        end: 2,
+        season: -1,
+      },
+      {
+        action: Action.INCLUDE,
+        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+        target: Constants.TierSlug.LEAGUE_PRO,
+        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
+        start: 1,
+        end: 1,
         season: -1,
       },
       // First-season fallback: seed by top prestige per federation
@@ -570,14 +599,16 @@ export const Items: Array<Item> = [
     entries: [
       // EPL: federation-based relegation back to advanced
       // NOTE: world-league entries are federation-filtered before range slicing,
-      // so these ranges must be relative to each federation's EPL cohort.
+      // so these ranges must be relative to each federation's EPL cohort
+      // (EU 17 => keep 9/relegate 8, AM 8 => keep 4/relegate 4,
+      // AS 5 => keep 2/relegate 3, OCE 2 => keep 1/relegate 1).
       {
         action: Action.INCLUDE,
         from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
         target: Constants.TierSlug.LEAGUE_PRO,
         federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 9,
-        end: 16,
+        start: 10,
+        end: 17,
         season: -1,
       },
       {
@@ -594,8 +625,8 @@ export const Items: Array<Item> = [
         from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
         target: Constants.TierSlug.LEAGUE_PRO,
         federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 4,
-        end: 6,
+        start: 3,
+        end: 5,
         season: -1,
       },
       {
@@ -1454,6 +1485,10 @@ function buildCompetitionFederationWhere(
   federationSlug: Constants.FederationSlug,
   countryFilter?: Prisma.CountryWhereInput | null,
 ): Prisma.TeamWhereInput {
+  if (federationSlug === Constants.FederationSlug.ESPORTS_WORLD) {
+    return countryFilter ? { country: countryFilter } : {};
+  }
+
   return {
     OR: [
       {
@@ -1479,6 +1514,180 @@ function buildCompetitionFederationWhere(
   };
 }
 
+async function getRegionalWorldLeaguePlacements(
+  entry: Entry,
+  federation: Prisma.FederationGetPayload<unknown>,
+): Promise<Array<Team>> {
+  const profile = await DatabaseClient.prisma.profile.findFirst();
+  const targetFederationSlug = (entry.federationSlug || federation.slug) as Constants.FederationSlug;
+  const season = profile.season + (entry.season || 0);
+
+  const [regularSeasonCompetition, playoffsCompetition] = await Promise.all([
+    DatabaseClient.prisma.competition.findFirst({
+      where: {
+        season,
+        tier: {
+          slug: Constants.TierSlug.LEAGUE_PRO,
+          league: {
+            slug: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+          },
+        },
+      },
+      include: {
+        competitors: {
+          orderBy: { position: 'asc' },
+          include: {
+            team: true,
+          },
+        },
+      },
+    }),
+    DatabaseClient.prisma.competition.findFirst({
+      where: {
+        season,
+        tier: {
+          slug: Constants.TierSlug.LEAGUE_PRO_PLAYOFFS,
+          league: {
+            slug: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+          },
+        },
+      },
+      include: {
+        competitors: {
+          orderBy: { position: 'asc' },
+          include: {
+            team: true,
+          },
+        },
+      },
+    }),
+  ]);
+
+  if (!regularSeasonCompetition) {
+    return [];
+  }
+
+  const playoffCompetitors: typeof regularSeasonCompetition.competitors = (
+    playoffsCompetition?.competitors ?? []
+  );
+  const allCompetitors = [
+    ...regularSeasonCompetition.competitors,
+    ...playoffCompetitors,
+  ];
+  const regionalTeams = await DatabaseClient.prisma.team.findMany({
+    where: {
+      id: {
+        in: [...new Set(allCompetitors.map((competitor) => competitor.teamId))],
+      },
+      ...buildCompetitionFederationWhere(targetFederationSlug),
+    },
+    select: {
+      id: true,
+    },
+  });
+  const regionalTeamIds = new Set(regionalTeams.map((team) => team.id));
+  const playoffTeamIds = new Set(
+    playoffCompetitors
+      .filter((competitor) => regionalTeamIds.has(competitor.teamId))
+      .map((competitor) => competitor.teamId),
+  );
+
+  const rankedCompetitors = [
+    ...playoffCompetitors.filter((competitor) =>
+      regionalTeamIds.has(competitor.teamId),
+    ),
+    ...regularSeasonCompetition.competitors.filter(
+      (competitor) =>
+        regionalTeamIds.has(competitor.teamId) && !playoffTeamIds.has(competitor.teamId),
+    ),
+  ];
+
+  return rankedCompetitors
+    .slice(entry.start < 0 ? entry.start : Math.max(0, entry.start - 1), entry.end || undefined)
+    .map((competitor) => competitor.team);
+}
+
+async function getRegionalLeaguePlacements(
+  tierSlug: Constants.TierSlug,
+  federationSlug: Constants.FederationSlug,
+  season: number,
+): Promise<Array<Team>> {
+  const playoffTierByTier: Partial<Record<Constants.TierSlug, Constants.TierSlug>> = {
+    [Constants.TierSlug.LEAGUE_OPEN]: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
+    [Constants.TierSlug.LEAGUE_INTERMEDIATE]: Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
+    [Constants.TierSlug.LEAGUE_MAIN]: Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
+    [Constants.TierSlug.LEAGUE_ADVANCED]: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
+  };
+  const playoffTierSlug = playoffTierByTier[tierSlug];
+
+  const [regularSeasonCompetition, playoffsCompetition] = await Promise.all([
+    DatabaseClient.prisma.competition.findFirst({
+      where: {
+        season,
+        federation: {
+          slug: federationSlug,
+        },
+        tier: {
+          slug: tierSlug,
+          league: {
+            slug: Constants.LeagueSlug.ESPORTS_LEAGUE,
+          },
+        },
+      },
+      include: {
+        competitors: {
+          orderBy: { position: 'asc' },
+          include: {
+            team: true,
+          },
+        },
+      },
+    }),
+    playoffTierSlug
+      ? DatabaseClient.prisma.competition.findFirst({
+        where: {
+          season,
+          federation: {
+            slug: federationSlug,
+          },
+          tier: {
+            slug: playoffTierSlug,
+            league: {
+              slug: Constants.LeagueSlug.ESPORTS_LEAGUE,
+            },
+          },
+        },
+        include: {
+          competitors: {
+            orderBy: { position: 'asc' },
+            include: {
+              team: true,
+            },
+          },
+        },
+      })
+      : Promise.resolve(null),
+  ]);
+
+  if (!regularSeasonCompetition) {
+    return [];
+  }
+
+  const playoffCompetitors: typeof regularSeasonCompetition.competitors = (
+    playoffsCompetition?.competitors ?? []
+  );
+  const playoffTeamIds = new Set(
+    playoffCompetitors.map((competitor) => competitor.teamId),
+  );
+
+  return [
+    ...playoffCompetitors.map((competitor) => competitor.team),
+    ...regularSeasonCompetition.competitors
+      .filter((competitor) => !playoffTeamIds.has(competitor.teamId))
+      .map((competitor) => competitor.team),
+  ];
+}
+
 async function getTeamsFromCompetitionEntry(
   entry: Entry,
   federation: Prisma.FederationGetPayload<unknown>,
@@ -1502,6 +1711,16 @@ async function getTeamsFromCompetitionEntry(
   const profile = await DatabaseClient.prisma.profile.findFirst();
   const isWorldLeagueEntry = entry.from === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE;
   const targetFederationSlug = (entry.federationSlug || federation.slug) as Constants.FederationSlug;
+
+  if (
+    isWorldLeagueEntry &&
+    entry.target === Constants.TierSlug.LEAGUE_PRO &&
+    entry.season === -1 &&
+    entry.federationSlug
+  ) {
+    return getRegionalWorldLeaguePlacements(entry, federation);
+  }
+
   const competition = await DatabaseClient.prisma.competition.findFirst({
     where: {
       season: profile.season + (entry.season || 0),
@@ -1641,6 +1860,57 @@ async function handleFallbackAction(
       }
       : null;
   const targetFederationSlug = (entry.federationSlug || federation.slug) as Constants.FederationSlug;
+  const regularLeagueTiers = new Set<Constants.TierSlug>([
+    Constants.TierSlug.LEAGUE_OPEN,
+    Constants.TierSlug.LEAGUE_INTERMEDIATE,
+    Constants.TierSlug.LEAGUE_MAIN,
+    Constants.TierSlug.LEAGUE_ADVANCED,
+  ]);
+
+  if (
+    regularLeagueTiers.has(entry.target) &&
+    tier.league.slug === Constants.LeagueSlug.ESPORTS_LEAGUE
+  ) {
+    const profile = await DatabaseClient.prisma.profile.findFirst();
+    const previousPlacements = await getRegionalLeaguePlacements(
+      entry.target,
+      targetFederationSlug,
+      profile.season - 1,
+    );
+
+    if (previousPlacements.length) {
+      const occupiedCompetitions = await DatabaseClient.prisma.competition.findMany({
+        where: {
+          season: profile.season,
+          federation: {
+            slug: targetFederationSlug,
+          },
+          tier: {
+            league: {
+              slug: Constants.LeagueSlug.ESPORTS_LEAGUE,
+            },
+            slug: {
+              in: [...regularLeagueTiers],
+            },
+          },
+        },
+        include: {
+          competitors: true,
+        },
+      });
+      const occupiedIds = new Set(
+        flatten(
+          occupiedCompetitions.map((competition) =>
+            competition.competitors.map((competitor) => competitor.teamId),
+          ),
+        ),
+      );
+
+      return previousPlacements
+        .filter((team) => !occupiedIds.has(team.id))
+        .slice(Math.max(0, entry.start - 1), entry.end || undefined);
+    }
+  }
 
   if (entry.target === Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1) {
     const teams = await DatabaseClient.prisma.team.findMany({
