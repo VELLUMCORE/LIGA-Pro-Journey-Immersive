@@ -150,6 +150,31 @@ class SwissTournament {
     this.generateNextRound();
   }
 
+  private buildPairings(seeds: number[], allowRematches = false): Array<[number, number]> | null {
+    if (seeds.length === 0) {
+      return [];
+    }
+
+    const [home, ...rest] = seeds;
+
+    for (let idx = 0; idx < rest.length; idx += 1) {
+      const away = rest[idx];
+
+      if (!allowRematches && this.records[home].opponents.includes(away)) {
+        continue;
+      }
+
+      const remainingSeeds = [...rest.slice(0, idx), ...rest.slice(idx + 1)];
+      const remainingPairings = this.buildPairings(remainingSeeds, allowRematches);
+
+      if (remainingPairings) {
+        return [[home, away], ...remainingPairings];
+      }
+    }
+
+    return null;
+  }
+
   public generateNextRound() {
     const currentRound = this.currentRound();
 
@@ -191,16 +216,29 @@ class SwissTournament {
         floatSeed = null;
       }
 
-      while (seeds.length >= 2) {
-        const home = seeds.shift() as number;
-        const awayIdx = seeds.findIndex((seed) => !this.records[home].opponents.includes(seed));
-        const away = awayIdx > -1 ? (seeds.splice(awayIdx, 1)[0] as number) : (seeds.shift() as number);
-        pairings.push([home, away]);
+      const floatCandidates =
+        seeds.length % 2 === 1 ? [...seeds.keys()].reverse().map((idx) => seeds[idx] as number) : [null];
+
+      let groupPairings: Array<[number, number]> | null = null;
+      let nextFloatSeed: number | null = null;
+
+      for (const candidate of floatCandidates) {
+        const pairingSeeds = candidate == null ? [...seeds] : seeds.filter((seed) => seed !== candidate);
+        const candidatePairings = this.buildPairings(pairingSeeds);
+
+        if (candidatePairings) {
+          groupPairings = candidatePairings;
+          nextFloatSeed = candidate;
+          break;
+        }
       }
 
-      if (seeds.length === 1) {
-        floatSeed = seeds.shift() as number;
+      if (!groupPairings) {
+        throw new Error(`Unable to generate non-rematch swiss pairings for record bucket ${key}.`);
       }
+
+      pairings.push(...groupPairings);
+      floatSeed = nextFloatSeed;
     });
 
     if (floatSeed != null) {
