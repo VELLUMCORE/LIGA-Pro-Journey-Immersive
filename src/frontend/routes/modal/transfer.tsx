@@ -6,13 +6,28 @@
 
 import React from 'react';
 import { useLocation } from 'react-router-dom';
+import { levelFromElo } from '@liga/backend/lib/levels';
 import { Bot, Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { Image } from '@liga/frontend/components';
 import { XPBar } from '@liga/frontend/components/player-card';
+import faceitLogo from '../../assets/faceit/icon.png';
+import faceitLevel1 from '../../assets/faceit/1.png';
+import faceitLevel2 from '../../assets/faceit/2.png';
+import faceitLevel3 from '../../assets/faceit/3.png';
+import faceitLevel4 from '../../assets/faceit/4.png';
+import faceitLevel5 from '../../assets/faceit/5.png';
+import faceitLevel6 from '../../assets/faceit/6.png';
+import faceitLevel7 from '../../assets/faceit/7.png';
+import faceitLevel8 from '../../assets/faceit/8.png';
+import faceitLevel9 from '../../assets/faceit/9.png';
+import faceitLevel10 from '../../assets/faceit/10.png';
 
 /** @type {Player} */
 type Player = (NonNullable<Awaited<ReturnType<typeof api.players.find<typeof Eagers.player>>>> & {
+  profile?: {
+    faceitElo: number;
+  } | null;
   careerStints?: Array<{
     id: number;
     teamId: number | null;
@@ -41,6 +56,19 @@ type HonorGroup = {
   seasons: number[];
   tierSlug: string;
   federationSlug: string;
+};
+
+const FACEIT_LEVEL_IMAGES: Record<number, string> = {
+  1: faceitLevel1,
+  2: faceitLevel2,
+  3: faceitLevel3,
+  4: faceitLevel4,
+  5: faceitLevel5,
+  6: faceitLevel6,
+  7: faceitLevel7,
+  8: faceitLevel8,
+  9: faceitLevel9,
+  10: faceitLevel10,
 };
 
 function formatStintDate(input: Date | string) {
@@ -75,6 +103,7 @@ export default function TransferModal() {
       .find({
         include: {
           ...Eagers.player.include,
+          profile: true,
           careerStints: {
             include: {
               team: true,
@@ -213,6 +242,8 @@ export default function TransferModal() {
     () => honors.filter((honor) => honor.tierSlug === Constants.TierSlug.MAJOR_CHAMPIONS_STAGE).length,
     [honors],
   );
+  const faceitElo = player?.profile?.faceitElo ?? player?.elo ?? null;
+  const faceitLevel = typeof faceitElo === 'number' ? levelFromElo(faceitElo) : null;
 
   if (!player) {
     return (
@@ -275,10 +306,10 @@ export default function TransferModal() {
 
           <thead>
             <tr>
-              <th colSpan={3}>Stats</th>
-              <th className="text-right">
+              <th colSpan={3} className="py-2">Stats</th>
+              <th className="py-2 text-right">
                 {majorWinCount > 0 && (
-                  <span className="badge border-yellow-300 bg-yellow-500/20 px-4 py-3 font-semibold text-yellow-200">
+                  <span className="badge border-yellow-300 bg-yellow-500/20 px-3 py-2 font-semibold text-yellow-200">
                     {majorWinCount}x Major winner
                   </span>
                 )}
@@ -289,12 +320,27 @@ export default function TransferModal() {
           <tbody>
             <tr>
               <td colSpan={4} className="px-4 py-2">
-                <XPBar
-                  className="w-full"
-                  title="Total XP"
-                  value={Bot.Exp.getTotalXP(player.xp)}
-                  max={100}
-                />
+                <div className="flex items-end gap-4">
+                  <div className="flex-1">
+                    <XPBar
+                      className="w-full"
+                      title="Total XP"
+                      value={Bot.Exp.getTotalXP(player.xp)}
+                      max={100}
+                    />
+                  </div>
+                  <span className="h-5 w-px bg-white/20" />
+                  <div className="mb-0.5 flex items-center gap-2">
+                    <img src={faceitLogo} className="h-5 w-5 object-contain" />
+                    <img
+                      src={FACEIT_LEVEL_IMAGES[faceitLevel ?? 1] || FACEIT_LEVEL_IMAGES[1]}
+                      className="h-5 w-5 object-contain"
+                    />
+                    <span className="text-sm font-semibold tabular-nums">
+                      {typeof faceitElo === 'number' ? faceitElo : 'N/A'}
+                    </span>
+                  </div>
+                </div>
               </td>
             </tr>
           </tbody>
