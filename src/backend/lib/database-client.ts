@@ -43,10 +43,6 @@ import { PrismaClient } from '@prisma/client';
 import { glob } from 'glob';
 import { Constants, Eagers, Util, is } from '@liga/shared';
 
-const TEAM_COMPETITION_FEDERATION_OVERRIDES: Partial<Record<string, Constants.FederationSlug>> = {
-  ego: Constants.FederationSlug.ESPORTS_AMERICAS,
-};
-
 /** @interface */
 interface PrismaMigration {
   id: string;
@@ -278,24 +274,20 @@ export default class DatabaseClient {
       },
     });
 
-    const federations = await prisma.federation.findMany({
-      select: { id: true, slug: true },
-    });
-    const federationIdBySlug = new Map(
-      federations.map((federation) => [federation.slug, federation.id]),
-    );
-
     for (const team of teams) {
+      // Do not overwrite explicit per-save assignments.
+      // This sync only backfills missing values.
+      if (team.competitionFederationId != null) {
+        continue;
+      }
+
       const rootSaveCompetitionFederationId = rootSaveCompetitionFederationIds.get(team.slug);
-      const overrideSlug = TEAM_COMPETITION_FEDERATION_OVERRIDES[team.slug];
       const nextCompetitionFederationId = rootSaveCompetitionFederationId
-        ?? (overrideSlug ? federationIdBySlug.get(overrideSlug) : null)
         ?? team.country?.continent?.federationId
         ?? null;
 
       if (
-        !nextCompetitionFederationId ||
-        nextCompetitionFederationId === team.competitionFederationId
+        !nextCompetitionFederationId
       ) {
         continue;
       }
