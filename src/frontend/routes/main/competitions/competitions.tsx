@@ -505,9 +505,9 @@ export default function () {
                 disabled={selectedFederationId < 0 || selectedTierId < 0 || selectedSeasonId < 0}
                 onClick={() =>
                   loadCompetition(
-                    competitionQuery.where.federationId,
-                    competitionQuery.where.season,
-                    competitionQuery.where.tier.id,
+                    selectedFederationId,
+                    selectedSeasonId,
+                    selectedTierId,
                   ).then(setCompetition)
                 }
               >

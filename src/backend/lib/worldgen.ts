@@ -2406,22 +2406,11 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
     // - default: same federation
     // - rare: other federations ONLY
     const federationFilter = wantCrossFederation ? { not: userFedId } : userFedId;
-    teamWhere.OR = [
-      { competitionFederationId: federationFilter },
-      {
-        competitionFederationId: null,
-        country: {
-          continent: {
-            federationId: federationFilter,
-          },
-        },
-      },
-    ];
+    teamWhere.competitionFederationId = federationFilter;
 
     const teams = await prisma.team.findMany({
       where: teamWhere,
       include: {
-        competitionFederationId: true,
         personas: true,
         country: {
           include: {
@@ -3539,7 +3528,7 @@ function selectNPCFreeAgentCandidatesByCountryPreference<
     return sameCountryCandidates;
   }
 
-  const teamFederationId = team.competitionFederationId ?? team.country?.continent?.federationId ?? null;
+  const teamFederationId = team.competitionFederationId ?? null;
   const sameFederationCandidates = teamFederationId == null
     ? []
     : candidates.filter((candidate) => {
@@ -3583,7 +3572,7 @@ function selectNPCTargetCandidatesByCountryPreference<
   if (!candidates.length) return candidates;
 
   const teamRegionCode = getTeamRegionCode(team);
-  const teamFederationId = team.competitionFederationId ?? team.country?.continent?.federationId ?? null;
+  const teamFederationId = team.competitionFederationId ?? null;
   const isInternationalTeam = Boolean(teamRegionCode && MIXED_REGION_COUNTRY_CODES.has(teamRegionCode));
 
   const sameCountryCandidates = candidates.filter((candidate) => candidate.countryId === team.countryId);
@@ -3780,7 +3769,7 @@ function selectCountryAwareOfferPool<
 
     if (playerFederationId == null) return false;
 
-    return (team.competitionFederationId ?? team.country?.continent?.federationId) === playerFederationId;
+    return team.competitionFederationId === playerFederationId;
   });
   const fallbackTeams = repeatSafeTeams.filter(
     (team) =>
@@ -3841,7 +3830,6 @@ export async function sendPlayerInviteForUser() {
 
   const teams = await prisma.team.findMany({
     include: {
-      competitionFederationId: true,
       personas: true,
       country: {
         include: {
@@ -4104,8 +4092,7 @@ export async function sendUserFaceitOffer() {
   }
 
   // Federation restriction (own federation)
-  const userFedId = profile.team?.competitionFederationId
-    ?? profile.player.country?.continent?.federationId
+  const userFedId = profile.player.country?.continent?.federationId
     ?? null;
 
   const prestigeIdx = Constants.Prestige.findIndex((p) => p === targetTier);
@@ -4116,18 +4103,11 @@ export async function sendUserFaceitOffer() {
       profile: null,
       ...(userFedId
         ? {
-          OR: [
-            { competitionFederationId: userFedId },
-            {
-              competitionFederationId: null,
-              country: { continent: { federationId: userFedId } },
-            },
-          ],
+          competitionFederationId: userFedId,
         }
         : {}),
     },
     include: {
-      competitionFederationId: true,
       personas: true,
       country: {
         include: {
@@ -4608,7 +4588,7 @@ async function processNPCContractExtensions() {
         take: 250,
       });
 
-      const sameFed = team.competitionFederationId ?? team.country?.continent?.federationId;
+      const sameFed = team.competitionFederationId ?? null;
       const teamRegionCode = getTeamRegionCode(team);
 
       const donor = benched
@@ -5089,8 +5069,8 @@ export async function sendTransferOffer(
   const target = scored.find((entry) => preferredCandidates.some((player) => player.id === entry.player.id))?.player;
   if (!target) return Promise.resolve();
 
-  const fromFed = from.competitionFederationId ?? from.country?.continent?.federationId;
-  const toFed = to.competitionFederationId ?? to.country?.continent?.federationId;
+  const fromFed = from.competitionFederationId ?? null;
+  const toFed = to.competitionFederationId ?? null;
   const sameFed = fromFed && toFed ? fromFed === toFed : true;
 
   const peakTier = await getCareerPeakTier(target.id);
