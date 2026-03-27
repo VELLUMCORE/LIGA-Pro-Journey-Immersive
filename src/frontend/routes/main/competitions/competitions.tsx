@@ -94,6 +94,48 @@ export default function () {
     [selectedFederationId, selectedSeasonId, selectedTierId],
   );
 
+  const loadCompetition = React.useCallback(
+    async (federationId: number, season: number, tierId: number) => {
+      const strict = await api.competitions.find({
+        ...Eagers.competition,
+        where: {
+          federationId,
+          season,
+          tier: {
+            id: tierId,
+          },
+        },
+      });
+
+      if (strict) {
+        return strict;
+      }
+
+      const tier = tiers.find((item) => item.id === tierId);
+      if (!tier) {
+        return undefined;
+      }
+
+      const bySlugInFederation = await api.competitions.all({
+        ...Eagers.competition,
+        where: {
+          federationId,
+          season,
+          tier: {
+            slug: tier.slug,
+          },
+        },
+      });
+
+      if (!bySlugInFederation.length) {
+        return undefined;
+      }
+
+      return bySlugInFederation[0];
+    },
+    [tiers],
+  );
+
   // Initial data fetch
   React.useEffect(() => {
     api.federations.all().then(setFederations);
@@ -104,11 +146,6 @@ export default function () {
   React.useEffect(() => {
     api.tiers.all(tierQuery).then(setTiers);
   }, [tierQuery]);
-
-  // Reset tier selection when federation changes
-  React.useEffect(() => {
-    setSelectedTierId(-1);
-  }, [selectedFederationId]);
 
   React.useEffect(() => {
     if (!hasQueryParams || initializedFromQuery) return;
@@ -129,23 +166,12 @@ export default function () {
     if (!hasQueryParams || initializedQueryCompetition) return;
     if (selectedFederationId <= 0 || selectedSeasonId <= 0 || selectedTierId <= 0) return;
 
-    api.competitions
-      .find({
-        ...Eagers.competition,
-        where: {
-          federationId: selectedFederationId,
-          season: selectedSeasonId,
-          tier: {
-            id: selectedTierId,
-          },
-        },
-      })
-      .then((result) => {
-        if (result) {
-          setCompetition(result);
-        }
-        setInitializedQueryCompetition(true);
-      });
+    loadCompetition(selectedFederationId, selectedSeasonId, selectedTierId).then((result) => {
+      if (result) {
+        setCompetition(result);
+      }
+      setInitializedQueryCompetition(true);
+    });
   }, [
     hasQueryParams,
     initializedQueryCompetition,
@@ -287,6 +313,25 @@ export default function () {
   }, [tiers, selectedFederation]);
 
   React.useEffect(() => {
+    if (selectedTierId <= 0 || !visibleTiers.length) {
+      return;
+    }
+
+    if (visibleTiers.some((tier) => tier.id === selectedTierId)) {
+      return;
+    }
+
+    const selectedTier = tiers.find((tier) => tier.id === selectedTierId);
+    if (!selectedTier) {
+      setSelectedTierId(-1);
+      return;
+    }
+
+    const mappedTier = visibleTiers.find((tier) => tier.slug === selectedTier.slug);
+    setSelectedTierId(mappedTier ? mappedTier.id : -1);
+  }, [selectedTierId, tiers, visibleTiers]);
+
+  React.useEffect(() => {
     if (hasQueryParams) return;
     if (!state.profile) return;
     if (selectedFederationId < 0) return;
@@ -297,20 +342,28 @@ export default function () {
 
     let defaultTier: (typeof tiers)[number] | undefined;
 
-    if (state.profile.teamId && state.profile.team) {
-      // Manager-style: use the team's current league tier.
+    const preferredOrder = [
+      'league:premier',
+      'league:advanced',
+      'league:main',
+      'league:intermediate',
+      'league:open',
+    ];
+
+    const teamCompetitionFederationId = state.profile.team?.competitionFederationId ?? null;
+    const isTeamFederation =
+      state.profile.teamId &&
+      teamCompetitionFederationId &&
+      selectedFederationId === teamCompetitionFederationId;
+
+    if (isTeamFederation && state.profile.team) {
+      // On the team's true federation: prefer the team's current league tier.
       const desiredSlug = Constants.Prestige[state.profile.team.tier];
       defaultTier = visibleTiers.find((tier) => tier.slug === desiredSlug);
-    } else {
-      // Player-style (teamless): pick the highest league tier in this federation.
-      const preferredOrder = [
-        'league:premier',
-        'league:advanced',
-        'league:main',
-        'league:intermediate',
-        'league:open',
-      ];
+    }
 
+    // In all other cases (teamless or non-team federation), use top division in that region.
+    if (!defaultTier) {
       defaultTier =
         preferredOrder
           .map((slug) => visibleTiers.find((tier) => tier.slug === slug))
@@ -323,21 +376,20 @@ export default function () {
       setSelectedTierId(defaultTier.id);
     }
 
-    api.competitions
-      .find({
-        ...Eagers.competition,
-        where: {
-          federationId: selectedFederationId,
-          season: state.profile.season,
-          tier: { id: defaultTier.id },
-        },
-      })
-      .then((result) => {
-        if (result) {
-          setCompetition(result);
-        }
-      });
-  }, [state.profile, selectedFederationId, visibleTiers, selectedTierId, competition]);
+    loadCompetition(selectedFederationId, selectedSeasonId, defaultTier.id).then((result) => {
+      if (result) {
+        setCompetition(result);
+      }
+    });
+  }, [
+    state.profile,
+    selectedFederationId,
+    selectedSeasonId,
+    visibleTiers,
+    selectedTierId,
+    competition,
+    loadCompetition,
+  ]);
 
   // Build seasons dropdown data
   const seasons = React.useMemo(
@@ -384,7 +436,10 @@ export default function () {
               <article>
                 <select
                   className="select"
-                  onChange={(event) => setSelectedFederationId(Number(event.target.value))}
+                  onChange={(event) => {
+                    setSelectedFederationId(Number(event.target.value));
+                    setSelectedTierId(-1);
+                  }}
                   value={selectedFederationId || -1}
                 >
                   <option disabled value={-1}>
@@ -448,7 +503,13 @@ export default function () {
                 type="button"
                 className="btn btn-primary btn-block col-span-2!"
                 disabled={selectedFederationId < 0 || selectedTierId < 0 || selectedSeasonId < 0}
-                onClick={() => api.competitions.find(competitionQuery).then(setCompetition)}
+                onClick={() =>
+                  loadCompetition(
+                    competitionQuery.where.federationId,
+                    competitionQuery.where.season,
+                    competitionQuery.where.tier.id,
+                  ).then(setCompetition)
+                }
               >
                 {t('shared.apply')}
               </button>
