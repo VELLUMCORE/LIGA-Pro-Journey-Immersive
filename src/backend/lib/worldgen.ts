@@ -2171,7 +2171,9 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
 
   // User federation (prefer the profile include; fallback to country lookup)
   let userFedId: number | null =
-    (profile as any)?.player?.country?.continent?.federationId ?? null;
+    (profile as any)?.team?.competitionFederationId
+    ?? (profile as any)?.player?.country?.continent?.federationId
+    ?? null;
 
   const userFederation = await prisma.federation.findFirst({
     where: { id: userFedId },
@@ -2403,15 +2405,23 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
     // Federation restriction:
     // - default: same federation
     // - rare: other federations ONLY
-    teamWhere.country = {
-      continent: {
-        federationId: wantCrossFederation ? { not: userFedId } : userFedId,
+    const federationFilter = wantCrossFederation ? { not: userFedId } : userFedId;
+    teamWhere.OR = [
+      { competitionFederationId: federationFilter },
+      {
+        competitionFederationId: null,
+        country: {
+          continent: {
+            federationId: federationFilter,
+          },
+        },
       },
-    };
+    ];
 
     const teams = await prisma.team.findMany({
       where: teamWhere,
       include: {
+        competitionFederationId: true,
         personas: true,
         country: {
           include: {
@@ -3486,6 +3496,7 @@ function getTeamRegionCode(team: {
 function matchesTeamCountryPreference(
   team: {
     countryId: number;
+    competitionFederationId?: number | null;
     country?: { code?: string | null; continent?: { code?: string | null } | null } | null;
   },
   candidate: {
@@ -3513,6 +3524,7 @@ function selectNPCFreeAgentCandidatesByCountryPreference<
 >(
   team: {
     countryId: number;
+    competitionFederationId?: number | null;
     country?: {
       code?: string | null;
       continent?: { code?: string | null; federationId?: number | null } | null;
@@ -3527,7 +3539,7 @@ function selectNPCFreeAgentCandidatesByCountryPreference<
     return sameCountryCandidates;
   }
 
-  const teamFederationId = team.country?.continent?.federationId ?? null;
+  const teamFederationId = team.competitionFederationId ?? team.country?.continent?.federationId ?? null;
   const sameFederationCandidates = teamFederationId == null
     ? []
     : candidates.filter((candidate) => {
@@ -3560,6 +3572,7 @@ function selectNPCTargetCandidatesByCountryPreference<
 >(
   team: {
     countryId: number;
+    competitionFederationId?: number | null;
     country?: {
       code?: string | null;
       continent?: { code?: string | null; federationId?: number | null } | null;
@@ -3570,7 +3583,7 @@ function selectNPCTargetCandidatesByCountryPreference<
   if (!candidates.length) return candidates;
 
   const teamRegionCode = getTeamRegionCode(team);
-  const teamFederationId = team.country?.continent?.federationId ?? null;
+  const teamFederationId = team.competitionFederationId ?? team.country?.continent?.federationId ?? null;
   const isInternationalTeam = Boolean(teamRegionCode && MIXED_REGION_COUNTRY_CODES.has(teamRegionCode));
 
   const sameCountryCandidates = candidates.filter((candidate) => candidate.countryId === team.countryId);
@@ -3724,6 +3737,7 @@ function selectCountryAwareOfferPool<
   T extends {
     id: number;
     countryId: number;
+    competitionFederationId?: number | null;
     country?: {
       code?: string | null;
       continent?: { code?: string | null; federationId?: number | null } | null;
@@ -3766,7 +3780,7 @@ function selectCountryAwareOfferPool<
 
     if (playerFederationId == null) return false;
 
-    return team.country?.continent?.federationId === playerFederationId;
+    return (team.competitionFederationId ?? team.country?.continent?.federationId) === playerFederationId;
   });
   const fallbackTeams = repeatSafeTeams.filter(
     (team) =>
@@ -3827,6 +3841,7 @@ export async function sendPlayerInviteForUser() {
 
   const teams = await prisma.team.findMany({
     include: {
+      competitionFederationId: true,
       personas: true,
       country: {
         include: {
@@ -4089,7 +4104,9 @@ export async function sendUserFaceitOffer() {
   }
 
   // Federation restriction (own federation)
-  const userFedId = profile.player.country?.continent?.federationId ?? null;
+  const userFedId = profile.team?.competitionFederationId
+    ?? profile.player.country?.continent?.federationId
+    ?? null;
 
   const prestigeIdx = Constants.Prestige.findIndex((p) => p === targetTier);
 
@@ -4098,10 +4115,19 @@ export async function sendUserFaceitOffer() {
       tier: prestigeIdx,
       profile: null,
       ...(userFedId
-        ? { country: { continent: { federationId: userFedId } } }
+        ? {
+          OR: [
+            { competitionFederationId: userFedId },
+            {
+              competitionFederationId: null,
+              country: { continent: { federationId: userFedId } },
+            },
+          ],
+        }
         : {}),
     },
     include: {
+      competitionFederationId: true,
       personas: true,
       country: {
         include: {
@@ -4582,7 +4608,7 @@ async function processNPCContractExtensions() {
         take: 250,
       });
 
-      const sameFed = team.country?.continent?.federationId;
+      const sameFed = team.competitionFederationId ?? team.country?.continent?.federationId;
       const teamRegionCode = getTeamRegionCode(team);
 
       const donor = benched
@@ -5063,8 +5089,8 @@ export async function sendTransferOffer(
   const target = scored.find((entry) => preferredCandidates.some((player) => player.id === entry.player.id))?.player;
   if (!target) return Promise.resolve();
 
-  const fromFed = from.country?.continent?.federationId;
-  const toFed = to.country?.continent?.federationId;
+  const fromFed = from.competitionFederationId ?? from.country?.continent?.federationId;
+  const toFed = to.competitionFederationId ?? to.country?.continent?.federationId;
   const sameFed = fromFed && toFed ? fromFed === toFed : true;
 
   const peakTier = await getCareerPeakTier(target.id);
