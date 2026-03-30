@@ -913,6 +913,7 @@ export const Settings = {
   matchRules: {
     maxRounds: 24,
     maxRoundsOvertime: 6,
+    mapOverride: null as string,
     overtime: true,
   },
   gameSettings: {

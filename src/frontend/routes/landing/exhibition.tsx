@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { cloneDeep, isNull, sample, set } from 'lodash';
+import { cloneDeep, sample, set } from 'lodash';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { useAudio, useTranslation } from '@liga/frontend/hooks';
@@ -19,15 +19,13 @@ import {
   FaFolderOpen,
 } from 'react-icons/fa';
 
-/** @enum */
-enum Tab {
-  GENERAL,
-  MATCH_RULES,
-}
+type TeamData = Awaited<ReturnType<typeof api.teams.all<typeof Eagers.team>>>[number];
 
 /** @interface */
 interface TeamSelectorProps {
   onChange: (teamId: number) => void;
+  onTeamUpdate?: (team: TeamData) => void;
+  onEditRoster?: (team: TeamData) => void;
   initialFederationId?: number;
   initialTierId?: number;
 }
@@ -49,9 +47,7 @@ function TeamSelector(props: TeamSelectorProps) {
   const [selectedTeam, setSelectedTeam] =
     React.useState<ReturnType<typeof findTeamOptionByValue>>();
   const [selectedTierId, setSelectedTierId] = React.useState<number>(props.initialTierId);
-  const [teams, setTeams] = React.useState<
-    Awaited<ReturnType<typeof api.teams.all<typeof Eagers.team>>>
-  >([]);
+  const [teams, setTeams] = React.useState<Awaited<ReturnType<typeof api.teams.all<typeof Eagers.team>>>>([]);
 
   // build team query
   const teamQuery = React.useMemo(
@@ -112,8 +108,16 @@ function TeamSelector(props: TeamSelectorProps) {
   // isolate the selected team
   const team = React.useMemo(
     () => teams.find((tteam) => tteam.id === selectedTeam?.id),
-    [selectedTeam],
+    [selectedTeam, teams],
   );
+
+  React.useEffect(() => {
+    if (!team) {
+      return;
+    }
+
+    props.onTeamUpdate?.(team);
+  }, [team]);
 
   return (
     <section className="flex flex-1 flex-col items-center gap-24 pt-24">
@@ -159,7 +163,9 @@ function TeamSelector(props: TeamSelectorProps) {
               >
                 {Constants.Prestige.map((prestige, prestigeId) => (
                   <option key={prestige} value={prestigeId}>
-                    {Constants.IdiomaticTier[prestige]}
+                    {Constants.IdiomaticTier[prestige] === 'Group Stage'
+                      ? 'ESL Pro League'
+                      : Constants.IdiomaticTier[prestige]}
                   </option>
                 ))}
               </select>
@@ -183,6 +189,15 @@ function TeamSelector(props: TeamSelectorProps) {
           </article>
         </fieldset>
       </form>
+      {!!team && (
+        <button
+          type="button"
+          className="btn btn-outline btn-sm"
+          onClick={() => props.onEditRoster?.(team)}
+        >
+          Edit Roster
+        </button>
+      )}
     </section>
   );
 }
@@ -193,13 +208,34 @@ function TeamSelector(props: TeamSelectorProps) {
  * @exports
  */
 export default function () {
-  const [activeTab, setActiveTab] = React.useState(Tab.GENERAL);
   const [appStatus, setAppStatus] = React.useState<NodeJS.ErrnoException>();
   const [settings, setSettings] = React.useState(Constants.Settings);
   const [homeTeamId, setHomeTeamId] = React.useState<number>();
   const [awayTeamId, setAwayTeamId] = React.useState<number>();
+  const [homeTeam, setHomeTeam] = React.useState<TeamData>();
+  const [awayTeam, setAwayTeam] = React.useState<TeamData>();
+  const [homeRoster, setHomeRoster] = React.useState<Array<number | null>>([]);
+  const [awayRoster, setAwayRoster] = React.useState<Array<number | null>>([]);
+  const [editingTeamId, setEditingTeamId] = React.useState<number | null>(null);
+  const [replacementSlot, setReplacementSlot] = React.useState(0);
+  const [rosterContextMenu, setRosterContextMenu] = React.useState<{
+    index: number;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [replacementFederationId, setReplacementFederationId] = React.useState<number | null>(null);
+  const [playerSearch, setPlayerSearch] = React.useState('');
+  const [replacementFederations, setReplacementFederations] = React.useState<
+    Awaited<ReturnType<typeof api.federations.all>>
+  >([]);
+  const [playerPoolFederationId, setPlayerPoolFederationId] = React.useState<number | null>(null);
+  const [playerPool, setPlayerPool] = React.useState<Awaited<ReturnType<typeof api.players.all<typeof Eagers.player>>>>([]);
+  const [replacementCache, setReplacementCache] = React.useState<
+    Record<number, Awaited<ReturnType<typeof api.players.all<typeof Eagers.player>>>[number]>
+  >({});
   const [isUserCT, setIsUserCT] = React.useState(false);
   const [mapPool, setMapPool] = React.useState<Awaited<ReturnType<typeof api.mapPool.find>>>([]);
+  const hasAttemptedDedicatedDetection = React.useRef(false);
   const navigate = useNavigate();
   const t = useTranslation('windows');
 
@@ -208,16 +244,21 @@ export default function () {
   const audioClick = useAudio('button-click.wav');
 
   React.useEffect(() => {
+    api.federations.all().then(setReplacementFederations);
+
     // detect steam and game paths together
     // which avoid a race-condition
-    Promise.all([api.app.detectSteam(), api.app.detectGame(Constants.Settings.general.game)]).then(
-      ([steamPath, gamePath]) => {
+    Promise.all([
+      api.app.detectSteam(),
+      api.app.detectGame(Constants.Settings.general.game),
+      api.app.detectDedicatedServer(),
+    ]).then(([steamPath, gamePath, dedicatedServerPath]) => {
         const modified = cloneDeep(settings);
         modified.general.steamPath = steamPath;
         modified.general.gamePath = gamePath;
+        modified.general.dedicatedServerPath = dedicatedServerPath || null;
         setSettings(modified);
-      },
-    );
+      });
 
     // fetch map pool
     api.mapPool
@@ -230,6 +271,23 @@ export default function () {
       })
       .then(setMapPool);
   }, []);
+
+  React.useEffect(() => {
+    if (settings.general.dedicatedServerPath || hasAttemptedDedicatedDetection.current) {
+      return;
+    }
+
+    hasAttemptedDedicatedDetection.current = true;
+    api.app.detectDedicatedServer().then((dedicatedServerPath) => {
+      if (!dedicatedServerPath) {
+        return;
+      }
+
+      const modified = cloneDeep(settings);
+      modified.general.dedicatedServerPath = dedicatedServerPath;
+      setSettings(modified);
+    });
+  }, [settings]);
 
   // handle settings updates
   const onSettingsUpdate = (path: string, value: unknown) => {
@@ -283,6 +341,219 @@ export default function () {
     return match ? appStatus.path : '';
   }, [appStatus]);
 
+  const selectedMap = settings.matchRules.mapOverride || mapPool[0]?.gameMap?.name;
+
+  React.useEffect(() => {
+    if (!mapPool.length || settings.matchRules.mapOverride) {
+      return;
+    }
+
+    const modified = cloneDeep(settings);
+    modified.matchRules.mapOverride = mapPool[0].gameMap.name;
+    setSettings(modified);
+  }, [mapPool, settings]);
+
+  const onMapSelection = (map: string) => {
+    const modified = cloneDeep(settings);
+    modified.matchRules.mapOverride = map;
+    setSettings(modified);
+  };
+
+  const getDefaultRoster = React.useCallback((team?: TeamData, injectYou = false): Array<number | null> => {
+    if (!team) {
+      return [];
+    }
+
+    const starters = team.players
+      .filter((player) => player.starter && !player.transferListed)
+      .slice(0, Constants.Application.SQUAD_MIN_LENGTH);
+    const fallback = team.players
+      .filter((player) => !player.transferListed)
+      .slice(0, Constants.Application.SQUAD_MIN_LENGTH);
+
+    const lineup = (starters.length ? starters : fallback).map((player) => player.id);
+
+    if (injectYou && lineup.length) {
+      const awperIdx = team.players.findIndex(
+        (player) =>
+          lineup.includes(player.id) &&
+          (player.role === Constants.UserRole.AWPER || player.role === Constants.PlayerRole.SNIPER),
+      );
+      const replacementIdx = awperIdx >= 0 ? awperIdx : 0;
+      lineup[replacementIdx] = -1;
+    }
+
+    return lineup
+      .slice(0, Constants.Application.SQUAD_MIN_LENGTH)
+      .concat(
+        Array.from({
+          length: Math.max(0, Constants.Application.SQUAD_MIN_LENGTH - lineup.length),
+        }).map((): null => null),
+      );
+  }, []);
+
+  React.useEffect(() => {
+    if (!homeTeam) {
+      return;
+    }
+
+    setHomeRoster(getDefaultRoster(homeTeam, true));
+  }, [homeTeam, getDefaultRoster]);
+
+  React.useEffect(() => {
+    if (!awayTeam) {
+      return;
+    }
+
+    setAwayRoster(getDefaultRoster(awayTeam));
+  }, [awayTeam, getDefaultRoster]);
+
+  const currentEditingTeam = editingTeamId === homeTeam?.id ? homeTeam : awayTeam;
+  const currentEditingRoster = editingTeamId === homeTeam?.id ? homeRoster : awayRoster;
+  const filteredPlayerPool = React.useMemo(
+    () =>
+      playerPool.filter((player) =>
+        player.name.toLowerCase().includes(playerSearch.trim().toLowerCase()),
+      ),
+    [playerPool, playerSearch],
+  );
+  const rosterPlayerLookup = React.useMemo(() => {
+    const lookup = new Map<number, TeamData['players'][number]>();
+
+    (currentEditingTeam?.players || []).forEach((player) => lookup.set(player.id, player));
+    playerPool.forEach((player) => lookup.set(player.id, player as TeamData['players'][number]));
+    Object.values(replacementCache).forEach((player) =>
+      lookup.set(player.id, player as TeamData['players'][number]),
+    );
+
+    return lookup;
+  }, [currentEditingTeam, playerPool, replacementCache]);
+  const currentRosterPlayers = currentEditingRoster
+    .map((playerId) => {
+      if (!Number.isInteger(playerId)) {
+        return null;
+      }
+
+      if (playerId === -1 && currentEditingTeam?.players?.length) {
+        const base =
+          currentEditingTeam.players.find(
+            (player) =>
+              player.role === Constants.UserRole.AWPER || player.role === Constants.PlayerRole.SNIPER,
+          ) || currentEditingTeam.players[0];
+
+        return {
+          ...base,
+          id: -1,
+          name: 'YOU',
+          avatar: 'resources://avatars/empty.png',
+          role: Constants.PlayerRole.SNIPER,
+        };
+      }
+
+      return rosterPlayerLookup.get(playerId);
+    })
+    .map((player) => player || null);
+
+  const openRosterEditor = (team: TeamData) => {
+    setEditingTeamId(team.id);
+    setReplacementSlot(0);
+    setRosterContextMenu(null);
+    setPlayerSearch('');
+    const federationId = team.country.continent.federation.id;
+    setReplacementFederationId(federationId);
+  };
+
+  React.useEffect(() => {
+    if (!editingTeamId || !replacementFederationId) {
+      return;
+    }
+
+    if (playerPoolFederationId === replacementFederationId && playerPool.length) {
+      return;
+    }
+
+    setPlayerPoolFederationId(replacementFederationId);
+    api.players
+      .all<typeof Eagers.player>({
+        ...Eagers.player,
+        where: {
+          team: {
+            country: {
+              continent: {
+                federationId: replacementFederationId,
+              },
+            },
+          },
+        },
+      })
+      .then(setPlayerPool);
+  }, [editingTeamId, replacementFederationId]);
+
+  const applyRosterReplacement = (
+    incomingPlayer: Awaited<ReturnType<typeof api.players.all<typeof Eagers.player>>>[number],
+  ) => {
+    if (!editingTeamId) {
+      return;
+    }
+    const incomingPlayerId = incomingPlayer.id;
+    setReplacementCache((prev) => ({
+      ...prev,
+      [incomingPlayerId]: incomingPlayer,
+    }));
+
+    const activeRoster = editingTeamId === homeTeam?.id ? homeRoster : awayRoster;
+    const otherRoster = editingTeamId === homeTeam?.id ? awayRoster : homeRoster;
+    const slotPlayerId = activeRoster[replacementSlot];
+    if (editingTeamId === homeTeam?.id && slotPlayerId === -1) {
+      return;
+    }
+    const duplicateInMatch = otherRoster.includes(incomingPlayerId)
+      || activeRoster.some(
+        (playerId, idx) => idx !== replacementSlot && playerId === incomingPlayerId,
+      );
+
+    if (duplicateInMatch && slotPlayerId !== incomingPlayerId) {
+      return;
+    }
+
+    const updateRoster = (prev: Array<number | null>) => {
+      const next = [...prev];
+      const targetSlot = Number.isInteger(next[replacementSlot])
+        ? replacementSlot
+        : next.findIndex((slot) => !Number.isInteger(slot));
+      const effectiveSlot = targetSlot >= 0 ? targetSlot : replacementSlot;
+      next[effectiveSlot] = incomingPlayerId;
+      return next.slice(0, Constants.Application.SQUAD_MIN_LENGTH).concat(
+        Array.from({
+          length: Math.max(0, Constants.Application.SQUAD_MIN_LENGTH - next.length),
+        }).map((): null => null),
+      );
+    };
+
+    if (editingTeamId === homeTeam?.id) {
+      setHomeRoster(updateRoster);
+      return;
+    }
+
+    setAwayRoster(updateRoster);
+  };
+
+  const removeRosterPlayer = (slotIndex: number) => {
+    const updateRoster = (prev: Array<number | null>) => {
+      const next = [...prev];
+      next[slotIndex] = null;
+      return next;
+    };
+
+    if (editingTeamId === homeTeam?.id) {
+      setHomeRoster(updateRoster);
+    } else {
+      setAwayRoster(updateRoster);
+    }
+
+    setRosterContextMenu(null);
+  };
+
   return (
     <main className="frosted flex h-full w-full">
       <FaArrowLeft
@@ -290,7 +561,13 @@ export default function () {
         onClick={() => navigate(-1)}
         onMouseDown={audioRelease}
       />
-      <TeamSelector initialFederationId={1} initialTierId={4} onChange={setHomeTeamId} />
+      <TeamSelector
+        initialFederationId={1}
+        initialTierId={4}
+        onChange={setHomeTeamId}
+        onTeamUpdate={setHomeTeam}
+        onEditRoster={openRosterEditor}
+      />
       <section className="center w-24 gap-4 text-center">
         <p>
           <em>Pick your starting side</em>
@@ -310,26 +587,48 @@ export default function () {
             <FaCaretRight />
           </article>
         </label>
+        <section className="mt-4 flex flex-col gap-2">
+          <article className="border-base-content/20 bg-base-300/20 h-24 w-44 overflow-hidden rounded-md border shadow-sm">
+            {!!selectedMap && (
+              <Image
+                className="h-full w-full object-cover"
+                src={Util.convertMapPool(selectedMap, settings.general.game, true)}
+                title={Util.convertMapPool(selectedMap, settings.general.game)}
+              />
+            )}
+          </article>
+          <article className="border-base-content/20 bg-base-300/20 h-12 w-44 rounded-md border p-0 shadow-sm">
+            <details className="dropdown h-full w-full">
+              <summary className="btn btn-ghost h-full w-full rounded-md text-center">
+                {selectedMap ? Util.convertMapPool(selectedMap, settings.general.game) : 'Choose Map'}
+              </summary>
+              <ul className="dropdown-content bg-base-200 rounded-box z-20 mt-1 flex max-h-72 w-44 flex-col overflow-y-auto overflow-x-hidden p-1 shadow">
+                {mapPool.map((map) => (
+                  <li key={map.gameMap.name} className="w-full">
+                    <button
+                      type="button"
+                      className="hover:bg-base-300 w-full rounded px-2 py-2 text-center"
+                      onClick={() => onMapSelection(map.gameMap.name)}
+                    >
+                      {Util.convertMapPool(map.gameMap.name, settings.general.game)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </article>
+        </section>
       </section>
-      <TeamSelector initialFederationId={2} initialTierId={4} onChange={setAwayTeamId} />
+      <TeamSelector
+        initialFederationId={2}
+        initialTierId={4}
+        onChange={setAwayTeamId}
+        onTeamUpdate={setAwayTeam}
+        onEditRoster={openRosterEditor}
+      />
       <section className="flex flex-1 flex-col p-4">
-        <header role="tablist" className="tabs tabs-box">
-          {Object.keys(Tab)
-            .filter((tabKey) => isNaN(Number(tabKey)))
-            .map((tabKey: keyof typeof Tab) => (
-              <a
-                key={tabKey + '__tab'}
-                role="tab"
-                className={cx('tab capitalize', Tab[tabKey] === activeTab && 'tab-active')}
-                onClick={() => setActiveTab(Tab[tabKey])}
-              >
-                {tabKey.replace('_', ' ').toLowerCase()}
-              </a>
-            ))}
-        </header>
         <form className="form-ios form-ios-col-2 w-full flex-1">
-          {activeTab === Tab.GENERAL && (
-            <fieldset>
+          <fieldset>
               <article>
                 <header>
                   <p>{t('settings.steamTitle')}</p>
@@ -406,63 +705,80 @@ export default function () {
               </article>
               <article>
                 <header>
-                  <p>{t('settings.launchOptionsTitle')}</p>
-                  <p>{t('settings.launchOptionsSubtitle')}</p>
+                  <p>Dedicated Server Path</p>
+                  <p>Path to your CS:GO Dedicated Server (srcds) installation.</p>
                 </header>
-                <aside>
+                <aside className="join">
                   <input
+                    readOnly
                     type="text"
-                    className="input join-item bg-base-200 text-sm"
-                    value={settings.general.gameLaunchOptions || ''}
-                    onChange={(event) =>
-                      onSettingsUpdate('general.gameLaunchOptions', event.target.value)
-                    }
+                    className="input join-item bg-base-200 cursor-default text-sm"
+                    value={settings.general.dedicatedServerPath || ''}
                   />
-                </aside>
-              </article>
-            </fieldset>
-          )}
-          {activeTab === Tab.MATCH_RULES && (
-            <fieldset>
-              <article>
-                <header>
-                  <p>{t('shared.maxRoundsTitle')}</p>
-                </header>
-                <aside>
-                  <select
-                    className="select"
-                    onChange={(event) =>
-                      onSettingsUpdate('matchRules.maxRounds', event.target.value)
+                  <button
+                    type="button"
+                    className="btn join-item"
+                    onClick={() =>
+                      api.app
+                        .dialog(Constants.WindowIdentifier.Landing, {
+                          properties: ['openDirectory'],
+                        })
+                        .then(
+                          (dialogData) =>
+                            !dialogData.canceled &&
+                            onSettingsUpdate('general.dedicatedServerPath', dialogData.filePaths[0]),
+                        )
                     }
-                    value={settings.matchRules.maxRounds}
                   >
-                    {[6, 12, 24, 30].map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
+                    <FaFolderOpen />
+                  </button>
                 </aside>
               </article>
-              <article>
-                <header>
-                  <p>{t('shared.overtimeTitle')}</p>
-                  <p>{t('shared.overtimeSubtitle')}</p>
-                </header>
-                <aside>
-                  <input
-                    type="checkbox"
-                    className="toggle"
-                    onChange={(event) =>
-                      onSettingsUpdate('matchRules.overtime', event.target.checked)
-                    }
-                    checked={settings.matchRules.overtime}
-                    value={String(settings.matchRules.overtime)}
-                  />
-                </aside>
-              </article>
-            </fieldset>
-          )}
+            <article>
+              <header>
+                <p>{t('settings.launchOptionsTitle')}</p>
+                <p>{t('settings.launchOptionsSubtitle')}</p>
+              </header>
+              <aside>
+                <input
+                  type="text"
+                  className="input join-item bg-base-200 text-sm"
+                  value={settings.general.gameLaunchOptions || ''}
+                  onChange={(event) =>
+                    onSettingsUpdate('general.gameLaunchOptions', event.target.value)
+                  }
+                />
+              </aside>
+            </article>
+            <article>
+              <header>
+                <p>Use USP-S</p>
+                <p>Enable to use USP-S as your CT pistol.</p>
+              </header>
+              <aside>
+                <input
+                  type="checkbox"
+                  className="toggle"
+                  checked={settings.gameSettings.isUSP}
+                  onChange={(event) => onSettingsUpdate('gameSettings.isUSP', event.target.checked)}
+                />
+              </aside>
+            </article>
+            <article>
+              <header>
+                <p>Use M4A1-S</p>
+                <p>Enable to use M4A1-S as your CT rifle.</p>
+              </header>
+              <aside>
+                <input
+                  type="checkbox"
+                  className="toggle"
+                  checked={settings.gameSettings.isM4A1}
+                  onChange={(event) => onSettingsUpdate('gameSettings.isM4A1', event.target.checked)}
+                />
+              </aside>
+            </article>
+          </fieldset>
         </form>
         <button
           className="btn btn-xl btn-block btn-primary"
@@ -471,13 +787,147 @@ export default function () {
             api.play.exhibition(
               settings,
               [homeTeamId, awayTeamId],
-              isUserCT ? awayTeamId : homeTeamId,
+              homeTeamId,
+              [
+                {
+                  teamId: homeTeamId,
+                  playerIds: homeRoster.filter((playerId): playerId is number =>
+                    Number.isInteger(playerId),
+                  ),
+                },
+                {
+                  teamId: awayTeamId,
+                  playerIds: awayRoster.filter((playerId): playerId is number =>
+                    Number.isInteger(playerId),
+                  ),
+                },
+              ].filter((entry) => Number.isInteger(entry.teamId) && entry.playerIds.length),
             )
           }
         >
           {t('main.dashboard.play')}
         </button>
       </section>
+      {editingTeamId && (
+        <aside className="bg-base-content/60 fixed inset-0 z-50 center p-6">
+          <section className="bg-base-200 h-[620px] w-full max-w-5xl rounded-xl p-4">
+            <header className="mb-3 flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Edit Roster - {currentEditingTeam?.name}</h2>
+              <button type="button" className="btn btn-sm" onClick={() => setEditingTeamId(null)}>
+                Close
+              </button>
+            </header>
+            <section className="grid h-[calc(100%-44px)] grid-cols-2 gap-4">
+              <article className="flex min-h-0 flex-col">
+                <p className="mb-2 font-semibold">Current Roster</p>
+                <div className="grid grid-cols-5 gap-2">
+                  {currentRosterPlayers.map((player, index) => (
+                    <button
+                      key={(player?.id || 'empty') + '_' + index}
+                      type="button"
+                      className={cx(
+                        'border-base-content/20 bg-base-100 rounded-lg border p-2',
+                        replacementSlot === index && 'border-primary',
+                      )}
+                      onClick={() => {
+                        if (player?.id === -1) {
+                          return;
+                        }
+
+                        setReplacementSlot(index);
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        if (!player || player.id === -1) {
+                          return;
+                        }
+
+                        setRosterContextMenu({
+                          index,
+                          x: event.clientX,
+                          y: event.clientY,
+                        });
+                      }}
+                    >
+                      {!!player && (
+                        <React.Fragment>
+                          <Image
+                            src={player.avatar || 'resources://avatars/empty.png'}
+                            className="mx-auto size-14 rounded-md object-cover"
+                          />
+                          <p className="truncate text-xs">{player.name}</p>
+                        </React.Fragment>
+                      )}
+                      {!player && (
+                        <React.Fragment>
+                          <div className="text-primary text-center text-4xl leading-none">+</div>
+                          <p className="truncate text-xs">Empty</p>
+                        </React.Fragment>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </article>
+              <article className="flex min-h-0 flex-col">
+                <p className="mb-2 font-semibold">Choose Replacement</p>
+                <select
+                  className="select select-sm mb-2 w-full"
+                  value={replacementFederationId || ''}
+                  onChange={(event) => setReplacementFederationId(Number(event.target.value))}
+                >
+                  {replacementFederations.map((federation) => (
+                    <option key={federation.id} value={federation.id}>
+                      {federation.name}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  className="input input-sm mb-2 w-full"
+                  placeholder="Search player name..."
+                  value={playerSearch}
+                  onChange={(event) => setPlayerSearch(event.target.value)}
+                />
+                <div className="grid min-h-0 flex-1 grid-cols-3 gap-2 overflow-y-auto pr-1">
+                  {filteredPlayerPool.map((player) => (
+                    <button
+                      key={player.id}
+                      type="button"
+                      className="border-base-content/20 bg-base-100 rounded-lg border p-2 text-left"
+                      onClick={() => applyRosterReplacement(player)}
+                    >
+                      <Image
+                        src={player.avatar || 'resources://avatars/empty.png'}
+                        className="mb-1 size-14 rounded-md object-cover"
+                      />
+                      <p className="truncate text-xs">{player.name}</p>
+                      <p className="text-primary text-[10px]">
+                        {currentEditingRoster.filter((slot) => Number.isInteger(slot)).length >=
+                        Constants.Application.SQUAD_MIN_LENGTH
+                          ? 'Replace'
+                          : 'Add'}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </article>
+            </section>
+          </section>
+        </aside>
+      )}
+      {!!rosterContextMenu && (
+        <button
+          type="button"
+          className="btn btn-sm btn-error fixed z-[60]"
+          style={{
+            top: rosterContextMenu.y,
+            left: rosterContextMenu.x,
+          }}
+          onClick={() => removeRosterPlayer(rosterContextMenu.index)}
+        >
+          Remove
+        </button>
+      )}
     </main>
   );
 }

@@ -40,6 +40,10 @@ export default function () {
       disabled: !state.profiles.length,
     },
     {
+      path: '/exhibition',
+      label: t('landing.home.exhibition'),
+    },
+    {
       type: 'divider',
     },
     {

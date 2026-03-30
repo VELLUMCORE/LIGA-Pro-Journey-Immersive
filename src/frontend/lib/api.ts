@@ -274,8 +274,19 @@ export default {
     installed: () => ipcRenderer.invoke(Constants.IPCRoute.MODS_GET_INSTALLED) as Promise<string>,
   },
   play: {
-    exhibition: (settings: typeof Constants.Settings, teamIds: Array<number>, teamId: number) =>
-      ipcRenderer.invoke(Constants.IPCRoute.PLAY_EXHIBITION, settings, teamIds, teamId),
+    exhibition: (
+      settings: typeof Constants.Settings,
+      teamIds: Array<number>,
+      teamId: number,
+      rosterOverrides?: Array<{ teamId: number; playerIds: Array<number> }>,
+    ) =>
+      ipcRenderer.invoke(
+        Constants.IPCRoute.PLAY_EXHIBITION,
+        settings,
+        teamIds,
+        teamId,
+        rosterOverrides,
+      ),
     start: (spectating?: boolean) => ipcRenderer.invoke(Constants.IPCRoute.PLAY_START, spectating),
   },
   plugins: {

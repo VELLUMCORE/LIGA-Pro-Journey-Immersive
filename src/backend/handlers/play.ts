@@ -27,28 +27,124 @@ import {
 export default function () {
   ipcMain.handle(
     Constants.IPCRoute.PLAY_EXHIBITION,
-    async (_, settings: typeof Constants.Settings, teamIds: Array<number>, teamId: number) => {
-      // configure default map if none selected 
-        const mapPool = await DatabaseClient.prisma.mapPool.findMany({
-          where: {
-            gameVersion: { slug: settings.general.game },
-          },
-          include: Eagers.mapPool.include,
-        });
+    async (
+      _,
+      settings: typeof Constants.Settings,
+      teamIds: Array<number>,
+      teamId: number,
+      rosterOverrides: Array<{ teamId: number; playerIds: Array<number> }> = [],
+    ) => {
+      type TeamWithPlayers = Prisma.TeamGetPayload<typeof Eagers.team>;
+
+      // configure map override if none selected
+      const mapPool = await DatabaseClient.prisma.mapPool.findMany({
+        where: {
+          gameVersion: { slug: settings.general.game },
+        },
+        include: Eagers.mapPool.include,
+      });
+      const selectedMap = settings.matchRules.mapOverride || sample(mapPool)?.gameMap.name || 'de_dust2';
 
       // minimize the landing window
       const landingWindow = WindowManager.get(Constants.WindowIdentifier.Landing);
       landingWindow.minimize();
 
       // grab team info
-      const [home, away] = await Promise.all(
+      const [homeRaw, awayRaw] = await Promise.all(
         teamIds.map((id) =>
-          DatabaseClient.prisma.team.findFirst({
+          DatabaseClient.prisma.team.findFirst<typeof Eagers.team>({
             where: { id },
             include: Eagers.team.include,
           }),
         ),
       );
+      let selectedUserPlayerId: number | null = null;
+
+      const applyRosterOverride = async (
+        team: TeamWithPlayers | null,
+      ): Promise<TeamWithPlayers | null> => {
+        if (!team) {
+          return team;
+        }
+
+        const override = rosterOverrides.find((entry) => entry.teamId === team.id);
+
+        if (!override?.playerIds?.length) {
+          return team;
+        }
+
+        const uniquePlayerIds = [...new Set(override.playerIds)].slice(
+          0,
+          Constants.Application.SQUAD_MIN_LENGTH,
+        );
+        const includesYou = team.id === teamId && uniquePlayerIds.includes(-1);
+        const rosterIds = uniquePlayerIds.filter((playerId) => playerId !== -1);
+        const teamPlayerMap = new Map(team.players.map((player) => [player.id, player]));
+        const externalPlayerIds = rosterIds.filter((playerId) => !teamPlayerMap.has(playerId));
+        const externalPlayers = externalPlayerIds.length
+          ? await DatabaseClient.prisma.player.findMany({
+            where: { id: { in: externalPlayerIds } },
+          })
+          : [];
+        const externalPlayerMap = new Map(externalPlayers.map((player) => [player.id, player]));
+        const forcedPlayers = rosterIds
+          .map((playerId) => teamPlayerMap.get(playerId) || externalPlayerMap.get(playerId))
+          .filter((player): player is typeof team.players[number] => Boolean(player));
+        const fallbackPlayers = team.players
+          .filter((player) => !rosterIds.includes(player.id))
+          .slice(0, Math.max(0, Constants.Application.SQUAD_MIN_LENGTH - forcedPlayers.length));
+        let lineup = [...forcedPlayers, ...fallbackPlayers].slice(0, Constants.Application.SQUAD_MIN_LENGTH);
+
+        if (team.id === teamId) {
+          const awperIdx = lineup.findIndex(
+            (player) =>
+              player.role === Constants.UserRole.AWPER || player.role === Constants.PlayerRole.SNIPER,
+          );
+          const sourceIdx = awperIdx >= 0 ? awperIdx : 0;
+
+          if (lineup.length > 0 && includesYou) {
+            const controlPlayer =
+              team.players.find((player) => !rosterIds.includes(player.id))
+              || team.players[sourceIdx]
+              || team.players[0];
+            selectedUserPlayerId = controlPlayer.id;
+
+            if (!lineup.some((player) => player.id === controlPlayer.id)) {
+              lineup = [...lineup, controlPlayer].slice(0, Constants.Application.SQUAD_MIN_LENGTH);
+            }
+          } else if (lineup.length > 0 && !selectedUserPlayerId) {
+            selectedUserPlayerId = lineup[sourceIdx].id;
+          }
+        }
+
+        return {
+          ...team,
+          players: lineup.map((player, index) => ({
+            ...player,
+            starter:
+              index < Constants.Application.SQUAD_MIN_LENGTH
+              && player.id !== selectedUserPlayerId,
+          })),
+        };
+      };
+      const [home, away] = await Promise.all([
+        applyRosterOverride(homeRaw),
+        applyRosterOverride(awayRaw),
+      ]);
+
+      if (!home || !away) {
+        throw new Error('Could not resolve exhibition teams.');
+      }
+
+      const homeIds = new Set(home.players.map((player) => player.id));
+      const awayOriginalPlayers = [...away.players];
+      away.players = away.players.filter((player) => !homeIds.has(player.id));
+      if (away.players.length < Constants.Application.SQUAD_MIN_LENGTH) {
+        const awayFallback = awayOriginalPlayers
+          .filter((player) => !homeIds.has(player.id) && !away.players.some((entry) => entry.id === player.id))
+          .slice(0, Constants.Application.SQUAD_MIN_LENGTH - away.players.length);
+        away.players = [...away.players, ...awayFallback];
+      }
 
       // grab user's chosen team
       const userTeam = [home, away].find((team) => team.id === teamId);
@@ -64,7 +160,7 @@ export default function () {
       // manually build the match-related objects
       const profile = {
         teamId: userTeam.id,
-        playerId: userTeam.players[0].id,
+        playerId: selectedUserPlayerId || userTeam.players[0].id,
         settings: JSON.stringify(settings),
       } as Prisma.ProfileGetPayload<unknown>;
 
@@ -81,6 +177,13 @@ export default function () {
         games: [
           {
             status: Constants.MatchStatus.READY,
+            num: 1,
+            map: selectedMap,
+            teams: [home, away].map((team, seed) => ({
+              seed: seed + 1,
+              teamId: team.id,
+              team,
+            })),
           },
         ],
         competitors: [home, away].map((team) => ({
