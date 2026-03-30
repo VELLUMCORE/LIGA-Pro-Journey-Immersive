@@ -159,10 +159,6 @@ export default function registerDatabaseHandlers() {
             OR: [{ from: { id } }, { to: { id } }],
           },
           {
-            status: Constants.TransferStatus.EXPIRED,
-            from: { id },
-          },
-          {
             status: Constants.TransferStatus.TEAM_ACCEPTED,
             teamIdFrom: id,
             teamIdTo: id,

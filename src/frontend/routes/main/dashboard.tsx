@@ -177,7 +177,6 @@ export default function () {
             in: [
               Constants.TransferStatus.PLAYER_ACCEPTED,
               Constants.TransferStatus.TEAM_ACCEPTED,
-              Constants.TransferStatus.EXPIRED,
             ],
           },
         },
