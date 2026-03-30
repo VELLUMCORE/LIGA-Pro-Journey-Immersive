@@ -2041,6 +2041,11 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
     },
   });
   if (!player) return Promise.resolve();
+  const { hasWonMajorAnyTeam } = await getUserMajorWinFlags({
+    prisma,
+    playerId: profile.playerId,
+    currentTeamId: profile.teamId,
+  });
 
   // If teamless, try to use most recent stint team for league stats & context.
   const cutoff = addDays(profile.date, -180);
@@ -2095,7 +2100,7 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
   // If teamless, only allow scouting if the player recently played ADVANCED/PRO.
   // (Open/Intermediate/Main free agents should primarily be handled by FACEIT/offers.)
   const isTeamless = profile.teamId == null;
-  if (isTeamless && baselineTierIdx < idxAdv) {
+  if (isTeamless && baselineTierIdx < idxAdv && !hasWonMajorAnyTeam) {
     // Schedule next weekly check (recurring)
     const nextDate = addDays(profile.date, 7);
     await prisma.calendar.create({
@@ -2109,7 +2114,7 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
   }
 
   // Need an effective team to compute league stats + context.
-  if (!effectiveTeamId) {
+  if (!effectiveTeamId && !hasWonMajorAnyTeam) {
     const nextDate = addDays(profile.date, 7);
     await prisma.calendar.create({
       data: {
@@ -2122,30 +2127,39 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
   }
 
   // League performance inputs (per-player + team context)
-  const leagueRecent = await LeagueStats.computeLeagueLifetimeStats(
-    effectiveTeamId,
-    profile.playerId,
-    30,
-  );
+  let kd = 1;
+  let standingScore = 0.5;
+  let formScore = 0.5;
+  let leagueSignal = 0.5;
+  if (effectiveTeamId) {
+    const leagueRecent = await LeagueStats.computeLeagueLifetimeStats(
+      effectiveTeamId,
+      profile.playerId,
+      30,
+    );
 
-  const kd = leagueRecent.kdRatio ?? 1;
-  const playerScore = kdToScore(kd);
+    kd = leagueRecent.kdRatio ?? 1;
+    const playerScore = kdToScore(kd);
 
-  // Team context score (standing + form)
-  const standingScore = await computeTeamStandingScore({ ...profile, teamId: effectiveTeamId });
-  const formScore = await computeTeamFormScore({ ...profile, teamId: effectiveTeamId }, 5);
+    // Team context score (standing + form)
+    standingScore = await computeTeamStandingScore({ ...profile, teamId: effectiveTeamId });
+    formScore = await computeTeamFormScore({ ...profile, teamId: effectiveTeamId }, 5);
 
-  // Weighting: KD matters most
-  const teamContextScore = clamp01(0.6 * standingScore + 0.4 * formScore);
-  const leagueSignal = clamp01(0.8 * playerScore + 0.2 * teamContextScore);
+    // Weighting: KD matters most
+    const teamContextScore = clamp01(0.6 * standingScore + 0.4 * formScore);
+    leagueSignal = clamp01(0.8 * playerScore + 0.2 * teamContextScore);
+  } else if (hasWonMajorAnyTeam) {
+    // Teamless fallback: major champions remain highly marketable even without recent league sample.
+    leagueSignal = 0.82;
+  }
 
   Engine.Runtime.Instance.log.debug(
-    "PlayerScoutingCheck: kd=%s playerScore=%s standing=%s form=%s leagueSignal=%s",
+    "PlayerScoutingCheck: kd=%s standing=%s form=%s leagueSignal=%s majorWinner=%s",
     kd.toFixed(2),
-    playerScore.toFixed(2),
     standingScore.toFixed(2),
     formScore.toFixed(2),
     leagueSignal.toFixed(2),
+    hasWonMajorAnyTeam ? "true" : "false",
   );
 
   // Helper: add tier idx safely
@@ -2162,6 +2176,10 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
 
   // Pro: always pro offers
   if (currentTierIdx >= idxPro) addTier(idxPro);
+  if (hasWonMajorAnyTeam) {
+    addTier(idxAdv);
+    addTier(idxPro);
+  }
 
   // Upward movement rules
   // - If baseline/current >= MAIN: allow MAIN lateral + occasional ADVANCED
@@ -2338,6 +2356,9 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
 
     // Teamless Advanced/Pro League scouting should be a bit rarer than contracted scouting
     if (isTeamless) pbx *= 0.85;
+    if (hasWonMajorAnyTeam && (pickedTierSlug === TierSlug.LEAGUE_ADVANCED || pickedTierSlug === TierSlug.LEAGUE_PRO)) {
+      pbx *= 1.5;
+    }
 
     pbx *= tuning.pbxMultLeague;
     pbx = clampPbx(pbx);
@@ -2442,6 +2463,10 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
       const sortedAsc = [...pool].sort((a, b) => (a.elo ?? 0) - (b.elo ?? 0));
       const bottomCount = Math.max(3, Math.floor(sortedAsc.length * 0.30));
       pool = sortedAsc.slice(0, bottomCount);
+    } else if (hasWonMajorAnyTeam && (pickedTierIdx === idxAdv || pickedTierIdx === idxPro)) {
+      const sortedDesc = [...pool].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0));
+      const topCount = Math.max(3, Math.floor(sortedDesc.length * 0.20));
+      pool = sortedDesc.slice(0, topCount);
     } else if (leagueSignal >= 0.75) {
       // Strong performance: bias toward top teams in that tier
       const sortedDesc = [...pool].sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0));
@@ -2784,6 +2809,58 @@ export async function onPlayerContractReview(entry: Calendar) {
   return Promise.resolve();
 }
 
+async function getUserMajorWinFlags(params: {
+  prisma: typeof DatabaseClient.prisma;
+  playerId: number;
+  currentTeamId?: number | null;
+}) {
+  const { prisma, playerId, currentTeamId = null } = params;
+
+  const majorWinWithPlayer = await prisma.competitionToTeam.findFirst({
+    where: {
+      position: 1,
+      teamId: { not: null },
+      competition: {
+        tier: { slug: TierSlug.MAJOR_CHAMPIONS_STAGE },
+        matches: {
+          some: {
+            players: {
+              some: { id: playerId },
+            },
+          },
+        },
+      },
+    },
+    select: { teamId: true },
+  });
+
+  const hasWonMajorAnyTeam = Boolean(majorWinWithPlayer?.teamId);
+
+  const hasWonMajorWithCurrentTeam = currentTeamId != null
+    ? await prisma.competitionToTeam.count({
+      where: {
+        position: 1,
+        teamId: currentTeamId,
+        competition: {
+          tier: { slug: TierSlug.MAJOR_CHAMPIONS_STAGE },
+          matches: {
+            some: {
+              players: {
+                some: { id: playerId },
+              },
+            },
+          },
+        },
+      },
+    }) > 0
+    : false;
+
+  return {
+    hasWonMajorAnyTeam,
+    hasWonMajorWithCurrentTeam,
+  };
+}
+
 /**
  * One-shot contract extension evaluation.
  *
@@ -2792,16 +2869,33 @@ export async function onPlayerContractReview(entry: Calendar) {
 export async function onPlayerContractExtensionEval(entry: Calendar) {
   const prisma = DatabaseClient.prisma;
   const playerId = Number(entry.payload);
+  const logExit = (reason: string) => {
+    Engine.Runtime.Instance.log.info(
+      "onPlayerContractExtensionEval exit: playerId=%d entryId=%d reason=%s",
+      playerId,
+      entry.id,
+      reason,
+    );
+    return Promise.resolve();
+  };
+  if (!Number.isFinite(playerId) || playerId <= 0) {
+    return logExit(`invalid-payload=${String(entry.payload)}`);
+  }
 
   const profile = await prisma.profile.findFirst(Eagers.profile);
-  if (!profile) return Promise.resolve();
-  if (profile.playerId !== playerId) return Promise.resolve();
+  if (!profile) return logExit("profile-missing");
+  if (profile.playerId !== playerId) return logExit("not-user-player");
 
   // Must be on a team
-  if (!profile.teamId || !profile.team) return Promise.resolve();
+  if (!profile.teamId || !profile.team) return logExit("profile-team-missing");
 
   const now = profile.date;
   const teamId = profile.teamId;
+  const { hasWonMajorWithCurrentTeam } = await getUserMajorWinFlags({
+    prisma,
+    playerId,
+    currentTeamId: teamId,
+  });
 
   // Load the current player to check contract end
   const player = await prisma.player.findFirst({
@@ -2816,26 +2910,26 @@ export async function onPlayerContractExtensionEval(entry: Calendar) {
       cost: true,
     },
   });
-  if (!player) return Promise.resolve();
-  if (player.teamId !== teamId) return Promise.resolve();
-  if (!player.contractEnd) return Promise.resolve();
+  if (!player) return logExit("player-missing");
+  if (player.teamId !== teamId) return logExit("player-team-mismatch");
+  if (!player.contractEnd) return logExit("contract-end-missing");
   if (player.transferListed) {
     Engine.Runtime.Instance.log.debug(
       "onPlayerContractExtensionEval: playerId=%d is transferListed; skipping extension offer.",
       playerId,
     );
-    return Promise.resolve();
+    return logExit("transfer-listed");
   }
 
   // Window check: 0 < daysLeft <= 30
   const daysLeft = differenceInDays(player.contractEnd, now);
   if (!(daysLeft > 0 && daysLeft <= (Constants.PlayerContractSettings.EXTENSION_EVAL_DAYS_BEFORE_END ?? 30))) {
-    return Promise.resolve();
+    return logExit(`outside-window-days-left=${daysLeft}`);
   }
 
   // Determine tier slug
   const tierSlug = getTeamTierSlug(profile.team.tier);
-  if (!tierSlug) return Promise.resolve();
+  if (!tierSlug) return logExit("tier-slug-missing");
 
   // Prevent duplicate extension offers (pending)
   const existingPendingExtension = await prisma.transfer.findFirst({
@@ -2857,7 +2951,7 @@ export async function onPlayerContractExtensionEval(entry: Calendar) {
       "onPlayerContractExtensionEval: pending extension offer already exists (transferId=%d).",
       existingPendingExtension.id,
     );
-    return Promise.resolve();
+    return logExit(`pending-extension-transfer-id=${existingPendingExtension.id}`);
   }
 
   // Pull league stats
@@ -2869,7 +2963,7 @@ export async function onPlayerContractExtensionEval(entry: Calendar) {
     matchesPlayed = leagueRecent.matchesPlayed ?? 0;
   } catch (_) {
     // If stats fail, do not offer an extension.
-    return Promise.resolve();
+    return logExit("league-stats-failed");
   }
 
   // Team context
@@ -2906,6 +3000,13 @@ export async function onPlayerContractExtensionEval(entry: Calendar) {
     pbx = 0;
   }
 
+  if (hasWonMajorWithCurrentTeam) {
+    pbx = Math.max(pbx, 85);
+    Engine.Runtime.Instance.log.info(
+      "onPlayerContractExtensionEval: major winner with current team, forcing min extension pbx=85.",
+    );
+  }
+
   // Additional small decline chance even when conditions are good
   const declinePbx = S.EXTENSION_DECLINE_PBX_EVEN_IF_GOOD ?? 10;
   if (pbx > 0 && declinePbx > 0 && Chance.rollD2(declinePbx)) {
@@ -2913,10 +3014,10 @@ export async function onPlayerContractExtensionEval(entry: Calendar) {
       "onPlayerContractExtensionEval: declined to offer despite eligibility (declinePbx=%d).",
       declinePbx,
     );
-    return Promise.resolve();
+    return logExit(`declined-by-roll-pbx=${declinePbx}`);
   }
 
-  if (pbx <= 0) return Promise.resolve();
+  if (pbx <= 0) return logExit("pbx-zero");
 
   // Roll whether we offer
   pbx = Math.max(1, Math.min(95, Math.round(pbx)));
@@ -2925,7 +3026,7 @@ export async function onPlayerContractExtensionEval(entry: Calendar) {
       "onPlayerContractExtensionEval: offer roll failed (pbx=%d).",
       pbx,
     );
-    return Promise.resolve();
+    return logExit(`offer-roll-failed-pbx=${pbx}`);
   }
 
   const contractYears = rollContractYears(tierSlug);
@@ -3010,6 +3111,12 @@ export async function onPlayerContractExtensionEval(entry: Calendar) {
     formScore,
     standingScore,
     daysLeft,
+  );
+  Engine.Runtime.Instance.log.info(
+    "onPlayerContractExtensionEval exit: playerId=%d entryId=%d reason=offer-created transferId=%d",
+    playerId,
+    entry.id,
+    transfer.id,
   );
 
   return Promise.resolve();
