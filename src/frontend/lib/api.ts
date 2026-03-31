@@ -274,6 +274,18 @@ export default {
     installed: () => ipcRenderer.invoke(Constants.IPCRoute.MODS_GET_INSTALLED) as Promise<string>,
   },
   play: {
+    exhibitionFederations: <T = unknown>() =>
+      ipcRenderer.invoke(Constants.IPCRoute.PLAY_EXHIBITION_FEDERATIONS) as Promise<
+        Array<Prisma.FederationGetPayload<T>>
+      >,
+    exhibitionTeams: <T = typeof Eagers.team>(query: Prisma.TeamFindManyArgs) =>
+      ipcRenderer.invoke(Constants.IPCRoute.PLAY_EXHIBITION_TEAMS, query) as Promise<
+        Array<Prisma.TeamGetPayload<T>>
+      >,
+    exhibitionPlayers: <T = typeof Eagers.player>(query?: Prisma.PlayerFindManyArgs) =>
+      ipcRenderer.invoke(Constants.IPCRoute.PLAY_EXHIBITION_PLAYERS, query) as Promise<
+        Array<Prisma.PlayerGetPayload<T>>
+      >,
     exhibition: (
       settings: typeof Constants.Settings,
       teamIds: Array<number>,

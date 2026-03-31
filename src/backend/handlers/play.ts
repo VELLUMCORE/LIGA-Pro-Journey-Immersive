@@ -3,7 +3,9 @@
  *
  * @module
  */
-import type { Prisma } from '@prisma/client';
+import { PrismaClient, type Prisma } from '@prisma/client';
+import fs from 'node:fs';
+import path from 'node:path';
 import log from 'electron-log';
 import { ipcMain } from 'electron';
 import { flatten, merge, sample } from 'lodash';
@@ -19,12 +21,41 @@ import {
   Worldgen,
 } from '@liga/backend/lib';
 
+async function withExhibitionRootPrisma<T>(callback: (prisma: PrismaClient) => Promise<T>) {
+  const rootSavePath = path.join(DatabaseClient.localBasePath, Util.getSaveFileName(0));
+  const prisma = new PrismaClient({
+    datasources: {
+      db: {
+        url: `file:${rootSavePath}?connection_limit=1`,
+      },
+    },
+  });
+
+  try {
+    return await callback(prisma);
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
 /**
  * Register the IPC event handlers.
  *
  * @function
  */
 export default function () {
+  ipcMain.handle(Constants.IPCRoute.PLAY_EXHIBITION_FEDERATIONS, async () =>
+    withExhibitionRootPrisma((prisma) => prisma.federation.findMany()),
+  );
+
+  ipcMain.handle(Constants.IPCRoute.PLAY_EXHIBITION_TEAMS, async (_, query: Prisma.TeamFindManyArgs) =>
+    withExhibitionRootPrisma((prisma) => prisma.team.findMany(query)),
+  );
+
+  ipcMain.handle(Constants.IPCRoute.PLAY_EXHIBITION_PLAYERS, async (_, query?: Prisma.PlayerFindManyArgs) =>
+    withExhibitionRootPrisma((prisma) => prisma.player.findMany(query)),
+  );
+
   ipcMain.handle(
     Constants.IPCRoute.PLAY_EXHIBITION,
     async (
@@ -34,178 +65,203 @@ export default function () {
       teamId: number,
       rosterOverrides: Array<{ teamId: number; playerIds: Array<number> }> = [],
     ) => {
-      type TeamWithPlayers = Prisma.TeamGetPayload<typeof Eagers.team>;
-
-      // configure map override if none selected
-      const mapPool = await DatabaseClient.prisma.mapPool.findMany({
-        where: {
-          gameVersion: { slug: settings.general.game },
-        },
-        include: Eagers.mapPool.include,
-      });
-      const selectedMap = settings.matchRules.mapOverride || sample(mapPool)?.gameMap.name || 'de_dust2';
-
-      // minimize the landing window
-      const landingWindow = WindowManager.get(Constants.WindowIdentifier.Landing);
-      landingWindow.minimize();
-
-      // grab team info
-      const [homeRaw, awayRaw] = await Promise.all(
-        teamIds.map((id) =>
-          DatabaseClient.prisma.team.findFirst<typeof Eagers.team>({
-            where: { id },
-            include: Eagers.team.include,
-          }),
-        ),
+      let previousPath = '';
+      try {
+        previousPath = DatabaseClient.path;
+      } catch (_) {
+        previousPath = Util.getSaveFileName(0);
+      }
+      const previousPathMatch = previousPath?.match(/save_(\d+)\.db$/);
+      const previousSaveId = Number(previousPathMatch?.[1] ?? 0);
+      const exhibitionSaveId = Number(`9${Date.now()}`);
+      const rootSavePath = path.join(DatabaseClient.localBasePath, Util.getSaveFileName(0));
+      const exhibitionSavePath = path.join(
+        DatabaseClient.basePath,
+        Util.getSaveFileName(exhibitionSaveId),
       );
-      let selectedUserPlayerId: number | null = null;
 
-      const applyRosterOverride = async (
-        team: TeamWithPlayers | null,
-      ): Promise<TeamWithPlayers | null> => {
-        if (!team) {
-          return team;
-        }
+      await fs.promises.mkdir(path.dirname(exhibitionSavePath), { recursive: true });
+      await fs.promises.copyFile(rootSavePath, exhibitionSavePath);
+      await DatabaseClient.connect(exhibitionSaveId);
 
-        const override = rosterOverrides.find((entry) => entry.teamId === team.id);
+      try {
+        type TeamWithPlayers = Prisma.TeamGetPayload<typeof Eagers.team>;
 
-        if (!override?.playerIds?.length) {
-          return team;
-        }
-
-        const uniquePlayerIds = [...new Set(override.playerIds)].slice(
-          0,
-          Constants.Application.SQUAD_MIN_LENGTH,
-        );
-        const includesYou = team.id === teamId && uniquePlayerIds.includes(-1);
-        const rosterIds = uniquePlayerIds.filter((playerId) => playerId !== -1);
-        const teamPlayerMap = new Map(team.players.map((player) => [player.id, player]));
-        const externalPlayerIds = rosterIds.filter((playerId) => !teamPlayerMap.has(playerId));
-        const externalPlayers = externalPlayerIds.length
-          ? await DatabaseClient.prisma.player.findMany({
-            where: { id: { in: externalPlayerIds } },
-          })
-          : [];
-        const externalPlayerMap = new Map(externalPlayers.map((player) => [player.id, player]));
-        const forcedPlayers = rosterIds
-          .map((playerId) => teamPlayerMap.get(playerId) || externalPlayerMap.get(playerId))
-          .filter((player): player is typeof team.players[number] => Boolean(player));
-        const fallbackPlayers = team.players
-          .filter((player) => !rosterIds.includes(player.id))
-          .slice(0, Math.max(0, Constants.Application.SQUAD_MIN_LENGTH - forcedPlayers.length));
-        let lineup = [...forcedPlayers, ...fallbackPlayers].slice(0, Constants.Application.SQUAD_MIN_LENGTH);
-
-        if (team.id === teamId) {
-          const awperIdx = lineup.findIndex(
-            (player) =>
-              player.role === Constants.UserRole.AWPER || player.role === Constants.PlayerRole.SNIPER,
-          );
-          const sourceIdx = awperIdx >= 0 ? awperIdx : 0;
-
-          if (lineup.length > 0 && includesYou) {
-            const controlPlayer =
-              team.players.find((player) => !rosterIds.includes(player.id))
-              || team.players[sourceIdx]
-              || team.players[0];
-            selectedUserPlayerId = controlPlayer.id;
-
-            if (!lineup.some((player) => player.id === controlPlayer.id)) {
-              lineup = [...lineup, controlPlayer].slice(0, Constants.Application.SQUAD_MIN_LENGTH);
-            }
-          } else if (lineup.length > 0 && !selectedUserPlayerId) {
-            selectedUserPlayerId = lineup[sourceIdx].id;
-          }
-        }
-
-        return {
-          ...team,
-          players: lineup.map((player, index) => ({
-            ...player,
-            starter:
-              index < Constants.Application.SQUAD_MIN_LENGTH
-              && player.id !== selectedUserPlayerId,
-          })),
-        };
-      };
-      const [home, away] = await Promise.all([
-        applyRosterOverride(homeRaw),
-        applyRosterOverride(awayRaw),
-      ]);
-
-      if (!home || !away) {
-        throw new Error('Could not resolve exhibition teams.');
-      }
-
-      const homeIds = new Set(home.players.map((player) => player.id));
-      const awayOriginalPlayers = [...away.players];
-      away.players = away.players.filter((player) => !homeIds.has(player.id));
-      if (away.players.length < Constants.Application.SQUAD_MIN_LENGTH) {
-        const awayFallback = awayOriginalPlayers
-          .filter((player) => !homeIds.has(player.id) && !away.players.some((entry) => entry.id === player.id))
-          .slice(0, Constants.Application.SQUAD_MIN_LENGTH - away.players.length);
-        away.players = [...away.players, ...awayFallback];
-      }
-
-      // grab user's chosen team
-      const userTeam = [home, away].find((team) => team.id === teamId);
-
-      // load federation and tier info
-      const federation = await DatabaseClient.prisma.federation.findFirst({
-        where: {
-          slug: Constants.FederationSlug.ESPORTS_WORLD,
-        },
-      });
-
-      // since this is an exhibition match we must
-      // manually build the match-related objects
-      const profile = {
-        teamId: userTeam.id,
-        playerId: selectedUserPlayerId || userTeam.players[0].id,
-        settings: JSON.stringify(settings),
-      } as Prisma.ProfileGetPayload<unknown>;
-
-      const tier = {
-        name: 'Exhibition',
-        slug: Constants.TierSlug.EXHIBITION_FRIENDLY,
-        groupSize: 0,
-        league: {
-          name: 'Exhibition',
-        },
-      } as Prisma.TierGetPayload<{ include: { league: true } }>;
-
-      const match = {
-        games: [
-          {
-            status: Constants.MatchStatus.READY,
-            num: 1,
-            map: selectedMap,
-            teams: [home, away].map((team, seed) => ({
-              seed: seed + 1,
-              teamId: team.id,
-              team,
-            })),
+        // configure map override if none selected
+        const mapPool = await DatabaseClient.prisma.mapPool.findMany({
+          where: {
+            gameVersion: { slug: settings.general.game },
           },
-        ],
-        competitors: [home, away].map((team) => ({
-          teamId: team.id,
-          team,
-        })),
-        competition: {
-          federation,
-          tier,
+          include: Eagers.mapPool.include,
+        });
+        const selectedMap = settings.matchRules.mapOverride || sample(mapPool)?.gameMap.name || 'de_dust2';
+
+        // minimize the landing window
+        const landingWindow = WindowManager.get(Constants.WindowIdentifier.Landing);
+        landingWindow.minimize();
+
+        // grab team info
+        const [homeRaw, awayRaw] = await Promise.all(
+          teamIds.map((id) =>
+            DatabaseClient.prisma.team.findFirst<typeof Eagers.team>({
+              where: { id },
+              include: Eagers.team.include,
+            }),
+          ),
+        );
+        let selectedUserPlayerId: number | null = null;
+
+        const applyRosterOverride = async (
+          team: TeamWithPlayers | null,
+        ): Promise<TeamWithPlayers | null> => {
+          if (!team) {
+            return team;
+          }
+
+          const override = rosterOverrides.find((entry) => entry.teamId === team.id);
+
+          if (!override?.playerIds?.length) {
+            return team;
+          }
+
+          const uniquePlayerIds = [...new Set(override.playerIds)].slice(
+            0,
+            Constants.Application.SQUAD_MIN_LENGTH,
+          );
+          const includesYou = team.id === teamId && uniquePlayerIds.includes(-1);
+          const rosterIds = uniquePlayerIds.filter((playerId) => playerId !== -1);
+          const teamPlayerMap = new Map(team.players.map((player) => [player.id, player]));
+          const externalPlayerIds = rosterIds.filter((playerId) => !teamPlayerMap.has(playerId));
+          const externalPlayers = externalPlayerIds.length
+            ? await DatabaseClient.prisma.player.findMany({
+              where: { id: { in: externalPlayerIds } },
+            })
+            : [];
+          const externalPlayerMap = new Map(externalPlayers.map((player) => [player.id, player]));
+          const forcedPlayers = rosterIds
+            .map((playerId) => teamPlayerMap.get(playerId) || externalPlayerMap.get(playerId))
+            .filter((player): player is typeof team.players[number] => Boolean(player));
+          const fallbackPlayers = team.players
+            .filter((player) => !rosterIds.includes(player.id))
+            .slice(0, Math.max(0, Constants.Application.SQUAD_MIN_LENGTH - forcedPlayers.length));
+          let lineup = [...forcedPlayers, ...fallbackPlayers].slice(0, Constants.Application.SQUAD_MIN_LENGTH);
+
+          if (team.id === teamId) {
+            const awperIdx = lineup.findIndex(
+              (player) =>
+                player.role === Constants.UserRole.AWPER || player.role === Constants.PlayerRole.SNIPER,
+            );
+            const sourceIdx = awperIdx >= 0 ? awperIdx : 0;
+
+            if (lineup.length > 0 && includesYou) {
+              const controlPlayer =
+                team.players.find((player) => !rosterIds.includes(player.id))
+                || team.players[sourceIdx]
+                || team.players[0];
+              selectedUserPlayerId = controlPlayer.id;
+
+              if (!lineup.some((player) => player.id === controlPlayer.id)) {
+                lineup = [...lineup, controlPlayer].slice(0, Constants.Application.SQUAD_MIN_LENGTH);
+              }
+            } else if (lineup.length > 0 && !selectedUserPlayerId) {
+              selectedUserPlayerId = lineup[sourceIdx].id;
+            }
+          }
+
+          return {
+            ...team,
+            players: lineup.map((player, index) => ({
+              ...player,
+              starter:
+                index < Constants.Application.SQUAD_MIN_LENGTH
+                && player.id !== selectedUserPlayerId,
+            })),
+          };
+        };
+        const [home, away] = await Promise.all([
+          applyRosterOverride(homeRaw),
+          applyRosterOverride(awayRaw),
+        ]);
+
+        if (!home || !away) {
+          throw new Error('Could not resolve exhibition teams.');
+        }
+
+        const homeIds = new Set(home.players.map((player) => player.id));
+        const awayOriginalPlayers = [...away.players];
+        away.players = away.players.filter((player) => !homeIds.has(player.id));
+        if (away.players.length < Constants.Application.SQUAD_MIN_LENGTH) {
+          const awayFallback = awayOriginalPlayers
+            .filter((player) => !homeIds.has(player.id) && !away.players.some((entry) => entry.id === player.id))
+            .slice(0, Constants.Application.SQUAD_MIN_LENGTH - away.players.length);
+          away.players = [...away.players, ...awayFallback];
+        }
+
+        // grab user's chosen team
+        const userTeam = [home, away].find((team) => team.id === teamId);
+
+        // load federation and tier info
+        const federation = await DatabaseClient.prisma.federation.findFirst({
+          where: {
+            slug: Constants.FederationSlug.ESPORTS_WORLD,
+          },
+        });
+
+        // since this is an exhibition match we must
+        // manually build the match-related objects
+        const profile = {
+          teamId: userTeam.id,
+          playerId: selectedUserPlayerId || userTeam.players[0].id,
+          settings: JSON.stringify(settings),
+        } as Prisma.ProfileGetPayload<unknown>;
+
+        const tier = {
+          name: 'Exhibition',
+          slug: Constants.TierSlug.EXHIBITION_FRIENDLY,
+          groupSize: 0,
+          league: {
+            name: 'Exhibition',
+          },
+        } as Prisma.TierGetPayload<{ include: { league: true } }>;
+
+        const match = {
+          games: [
+            {
+              status: Constants.MatchStatus.READY,
+              num: 1,
+              map: selectedMap,
+              teams: [home, away].map((team, seed) => ({
+                seed: seed + 1,
+                teamId: team.id,
+                team,
+              })),
+            },
+          ],
           competitors: [home, away].map((team) => ({
             teamId: team.id,
-            team: team as Omit<typeof team, 'players' | 'country'>,
+            team,
           })),
-        },
-      } as unknown as Prisma.MatchGetPayload<typeof Eagers.match>;
+          competition: {
+            federation,
+            tier,
+            competitors: [home, away].map((team) => ({
+              teamId: team.id,
+              team: team as Omit<typeof team, 'players' | 'country'>,
+            })),
+          },
+        } as unknown as Prisma.MatchGetPayload<typeof Eagers.match>;
 
-      // start the server and play the match
-      const gameServer = new Game.Server(profile, match);
-      await gameServer.start();
+        // start the server and play the match
+        const gameServer = new Game.Server(profile, match);
+        await gameServer.start();
 
-      // restore window
-      landingWindow.restore();
+        // restore window
+        landingWindow.restore();
+      } finally {
+        await DatabaseClient.disconnect();
+        await fs.promises.unlink(exhibitionSavePath).catch(() => Promise.resolve());
+        await DatabaseClient.connect(previousSaveId);
+      }
     },
   );
   ipcMain.handle(Constants.IPCRoute.PLAY_START, async (_, spectating?: boolean) => {

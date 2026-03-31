@@ -19,7 +19,7 @@ import {
   FaFolderOpen,
 } from 'react-icons/fa';
 
-type TeamData = Awaited<ReturnType<typeof api.teams.all<typeof Eagers.team>>>[number];
+type TeamData = Awaited<ReturnType<typeof api.play.exhibitionTeams<typeof Eagers.team>>>[number];
 
 /** @interface */
 interface TeamSelectorProps {
@@ -39,7 +39,7 @@ interface TeamSelectorProps {
 function TeamSelector(props: TeamSelectorProps) {
   const t = useTranslation('windows');
   const [federations, setFederations] = React.useState<
-    Awaited<ReturnType<typeof api.federations.all>>
+    Awaited<ReturnType<typeof api.play.exhibitionFederations>>
   >([]);
   const [selectedFederationId, setSelectedFederationId] = React.useState<number>(
     props.initialFederationId,
@@ -47,7 +47,9 @@ function TeamSelector(props: TeamSelectorProps) {
   const [selectedTeam, setSelectedTeam] =
     React.useState<ReturnType<typeof findTeamOptionByValue>>();
   const [selectedTierId, setSelectedTierId] = React.useState<number>(props.initialTierId);
-  const [teams, setTeams] = React.useState<Awaited<ReturnType<typeof api.teams.all<typeof Eagers.team>>>>([]);
+  const [teams, setTeams] = React.useState<
+    Awaited<ReturnType<typeof api.play.exhibitionTeams<typeof Eagers.team>>>
+  >([]);
 
   // build team query
   const teamQuery = React.useMemo(
@@ -60,12 +62,12 @@ function TeamSelector(props: TeamSelectorProps) {
 
   // initial data fetch
   React.useEffect(() => {
-    api.federations.all().then(setFederations);
+    api.play.exhibitionFederations().then(setFederations);
   }, []);
 
   // apply team filters
   React.useEffect(() => {
-    api.teams.all<typeof Eagers.team>(teamQuery).then(setTeams);
+    api.play.exhibitionTeams<typeof Eagers.team>(teamQuery).then(setTeams);
   }, [teamQuery]);
 
   // preload random team
@@ -226,12 +228,14 @@ export default function () {
   const [replacementFederationId, setReplacementFederationId] = React.useState<number | null>(null);
   const [playerSearch, setPlayerSearch] = React.useState('');
   const [replacementFederations, setReplacementFederations] = React.useState<
-    Awaited<ReturnType<typeof api.federations.all>>
+    Awaited<ReturnType<typeof api.play.exhibitionFederations>>
   >([]);
   const [playerPoolFederationId, setPlayerPoolFederationId] = React.useState<number | null>(null);
-  const [playerPool, setPlayerPool] = React.useState<Awaited<ReturnType<typeof api.players.all<typeof Eagers.player>>>>([]);
+  const [playerPool, setPlayerPool] = React.useState<
+    Awaited<ReturnType<typeof api.play.exhibitionPlayers<typeof Eagers.player>>>
+  >([]);
   const [replacementCache, setReplacementCache] = React.useState<
-    Record<number, Awaited<ReturnType<typeof api.players.all<typeof Eagers.player>>>[number]>
+    Record<number, Awaited<ReturnType<typeof api.play.exhibitionPlayers<typeof Eagers.player>>>[number]>
   >({});
   const [isUserCT, setIsUserCT] = React.useState(false);
   const [mapPool, setMapPool] = React.useState<Awaited<ReturnType<typeof api.mapPool.find>>>([]);
@@ -244,7 +248,7 @@ export default function () {
   const audioClick = useAudio('button-click.wav');
 
   React.useEffect(() => {
-    api.federations.all().then(setReplacementFederations);
+    api.play.exhibitionFederations().then(setReplacementFederations);
 
     // detect steam and game paths together
     // which avoid a race-condition
@@ -473,8 +477,8 @@ export default function () {
     }
 
     setPlayerPoolFederationId(replacementFederationId);
-    api.players
-      .all<typeof Eagers.player>({
+    api.play
+      .exhibitionPlayers<typeof Eagers.player>({
         ...Eagers.player,
         where: {
           team: {
@@ -490,7 +494,7 @@ export default function () {
   }, [editingTeamId, replacementFederationId]);
 
   const applyRosterReplacement = (
-    incomingPlayer: Awaited<ReturnType<typeof api.players.all<typeof Eagers.player>>>[number],
+    incomingPlayer: Awaited<ReturnType<typeof api.play.exhibitionPlayers<typeof Eagers.player>>>[number],
   ) => {
     if (!editingTeamId) {
       return;
