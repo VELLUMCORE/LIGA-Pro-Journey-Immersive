@@ -787,10 +787,14 @@ export default function () {
         <button
           className="btn btn-xl btn-block btn-primary"
           onMouseDown={audioClick}
-          onClick={() =>
-            api.play.exhibition(
+          onClick={() => {
+            const orderedTeamIds = isUserCT
+              ? [awayTeamId, homeTeamId]
+              : [homeTeamId, awayTeamId];
+
+            return api.play.exhibition(
               settings,
-              [homeTeamId, awayTeamId],
+              orderedTeamIds,
               homeTeamId,
               [
                 {
@@ -806,8 +810,8 @@ export default function () {
                   ),
                 },
               ].filter((entry) => Number.isInteger(entry.teamId) && entry.playerIds.length),
-            )
-          }
+            );
+          }}
         >
           {t('main.dashboard.play')}
         </button>
