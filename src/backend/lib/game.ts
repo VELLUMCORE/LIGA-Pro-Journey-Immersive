@@ -919,12 +919,15 @@ End\n
       select: { role: true },
     });
 
+    const isCustomGame = this.match.competition.tier.slug === Constants.TierSlug.EXHIBITION_FRIENDLY;
     const userCompetitor = this.competitors.find((competitor) => competitor.teamId === this.profile.teamId);
     const teamHasAwper = !!userCompetitor?.team?.players?.some(
       (player) =>
         player.role === Constants.UserRole.AWPER || player.role === Constants.PlayerRole.SNIPER,
     );
-    const isAWP = !this.spectating && (user?.role === 'AWPER' || !teamHasAwper) ? 1 : 0;
+    const isUserAwper = user?.role === Constants.UserRole.AWPER;
+    const shouldForceAwpForCustomGame = isCustomGame && !teamHasAwper;
+    const isAWP = !this.spectating && (isUserAwper || shouldForceAwpForCustomGame) ? 1 : 0;
     const isM4A1 = this.settings.gameSettings?.isM4A1 ? 1 : 0;
     const isUSP = this.settings.gameSettings?.isUSP ? 1 : 0;
     const isIGL = !this.spectating && user?.role === "IGL";
