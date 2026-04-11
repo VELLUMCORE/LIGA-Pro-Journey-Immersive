@@ -28,6 +28,12 @@ async function handleOnReady() {
     log.warn(error);
   }
 
+  try {
+    await DatabaseClient.cleanupOrphanedExhibitionSaves();
+  } catch (error) {
+    log.warn(error);
+  }
+
   // register all ipc handlers
   Object.values(IPCHandlers).forEach((handler) => handler());
 

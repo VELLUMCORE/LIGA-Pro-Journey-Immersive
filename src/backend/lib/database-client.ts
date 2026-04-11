@@ -93,6 +93,7 @@ const mixedRegionCountries = [
 ] as const;
 
 const mixedRegionCodes = new Set(['EU', 'NA', 'SA', 'AS']);
+const exhibitionSaveFileRegex = /^save_9\d{13}\.db(?:-(?:shm|wal))?$/i;
 
 /** @class */
 export default class DatabaseClient {
@@ -868,6 +869,39 @@ export default class DatabaseClient {
 
     this.log.info('Moving "%s" to "%s"', oldPath, newPath);
     return fs.promises.rename(oldPath, newPath);
+  }
+
+  /**
+   * Removes stale exhibition save files that may remain
+   * after an ungraceful app shutdown.
+   *
+   * @method
+   */
+  public static async cleanupOrphanedExhibitionSaves() {
+    const files = await glob('save_9*.db*', {
+      cwd: DatabaseClient.basePath,
+      nodir: true,
+    }).catch((error): string[] => {
+      DatabaseClient.log.warn('Failed to scan for orphaned exhibition saves: %s', error);
+      return [];
+    });
+
+    if (!files.length) {
+      return;
+    }
+
+    const deletions = files
+      .filter((file) => exhibitionSaveFileRegex.test(path.basename(file)))
+      .map(async (file) => {
+        const filePath = path.join(DatabaseClient.basePath, file);
+        await fs.promises.unlink(filePath).catch(() => Promise.resolve());
+      });
+
+    await Promise.all(deletions);
+
+    if (deletions.length) {
+      DatabaseClient.log.info('Cleaned up %d orphaned exhibition save file(s).', deletions.length);
+    }
   }
 
   /**
