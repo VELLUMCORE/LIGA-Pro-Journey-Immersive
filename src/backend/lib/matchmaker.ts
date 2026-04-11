@@ -4,7 +4,11 @@ import { levelFromElo } from "@liga/backend/lib/levels";
 
 type BotCandidate = Player & {
   country: { code: string; continent: { federationId: number } };
-  team: null | { countryId: number; country: { continent: { federationId: number } } };
+  team: null | {
+    countryId: number;
+    competitionFederationId: number | null;
+    country: { continent: { federationId: number } };
+  };
 };
 
 export interface MatchPlayer {
@@ -49,11 +53,7 @@ export class FaceitMatchmaker {
       OR: [
         {
           team: {
-            country: {
-              continent: {
-                federationId,
-              },
-            },
+            competitionFederationId: federationId,
           },
         },
         {
@@ -285,7 +285,7 @@ export class FaceitMatchmaker {
     const userElo = baseProfile.faceitElo;
     const queueElo = Number.isFinite(user.queueElo) ? Math.round(user.queueElo as number) : userElo;
     const federationId =
-      userDb.team?.country?.continent?.federation?.id ??
+      userDb.team?.competitionFederationId ??
       userDb.country.continent.federation.id;
 
     // -------------------------------------------------

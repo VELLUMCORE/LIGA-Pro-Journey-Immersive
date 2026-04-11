@@ -113,25 +113,7 @@ async function getFaceitLeaderboard(
     limit?: number;
   }
 ) {
-  const where: any = {};
-
-  if (options?.federationId != null) {
-    where.country = {
-      continent: {
-        federationId: options.federationId,
-      },
-    };
-  }
-
-  if (options?.countryCode) {
-    where.country = {
-      ...(where.country || {}),
-      code: options.countryCode.toUpperCase(),
-    };
-  }
-
   const players = await prisma.player.findMany({
-    where,
     include: {
       country: {
         include: {
@@ -140,6 +122,11 @@ async function getFaceitLeaderboard(
               federation: true,
             },
           },
+        },
+      },
+      team: {
+        include: {
+          competitionFederation: true,
         },
       },
     },
@@ -157,10 +144,22 @@ async function getFaceitLeaderboard(
         nickname: player.name || "Unknown",
         countryCode: player.country?.code?.toLowerCase() || null,
         countryName: player.country?.name || null,
-        federationSlug: player.country?.continent?.federation?.slug || null,
+        federationId: player.team?.competitionFederationId ?? player.country?.continent?.federation?.id ?? null,
+        federationSlug:
+          player.team?.competitionFederation?.slug ||
+          player.country?.continent?.federation?.slug ||
+          null,
         faceitElo: playerElo,
         faceitLevel: levelFromElo(playerElo),
       };
+    })
+    .filter((entry: any) => {
+      if (options?.federationId == null) return true;
+      return entry.federationId === options.federationId;
+    })
+    .filter((entry: any) => {
+      if (!options?.countryCode) return true;
+      return entry.countryCode?.toUpperCase() === options.countryCode.toUpperCase();
     })
     .sort((a: any, b: any) => b.faceitElo - a.faceitElo);
 
@@ -287,6 +286,11 @@ export default function registerFaceitHandlers() {
                 continent: true,
               },
             },
+            team: {
+              select: {
+                competitionFederationId: true,
+              },
+            },
           },
         })
         : null;
@@ -296,7 +300,9 @@ export default function registerFaceitHandlers() {
       const daily = await getFaceitDailyState(prisma, profile);
       const leaderboard = fullPlayer
         ? await getFaceitLeaderboard(prisma, profile, {
-          federationId: fullPlayer?.country?.continent?.federationId,
+          federationId:
+            fullPlayer?.team?.competitionFederationId ??
+            fullPlayer?.country?.continent?.federationId,
           limit: 10,
         })
         : [];

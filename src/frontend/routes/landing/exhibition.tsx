@@ -593,7 +593,7 @@ export default function () {
     }
 
     const nextRoster = Array.from(
-      { length: Constants.Application.SQUAD_MIN_LENGTH },
+      { length: Number(Constants.Application.SQUAD_MIN_LENGTH) },
       (): number | null => null,
     );
     if (lockedYouSlotIndex >= 0) {

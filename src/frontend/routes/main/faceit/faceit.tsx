@@ -45,7 +45,7 @@ export const RANK_IMAGES = [
   null as string | null,
 ];
 
-const rankImagesContext = require.context("../../../assets/faceit", false, /^\.\/rank\d+\.png$/);
+const rankImagesContext = (require as any).context("../../../assets/faceit", false, /^\.\/rank\d+\.png$/);
 
 for (const key of rankImagesContext.keys()) {
   const match = key.match(/rank(\d+)\.png$/);
