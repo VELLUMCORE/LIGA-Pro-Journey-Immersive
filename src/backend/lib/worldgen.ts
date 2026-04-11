@@ -3567,10 +3567,11 @@ function filterRepeatedOfferTeam<T extends { id: number }>(
 }
 
 
-const MIXED_REGION_COUNTRY_CODES = new Set(['EU', 'NA', 'SA', 'AS']);
+const MIXED_REGION_COUNTRY_CODES = new Set(['EU', 'NA', 'XSA', 'AS']);
 const MIXED_REGION_STORAGE_CODES: Record<string, string> = {
   eu: 'EU',
   na: 'NA',
+  xsa: 'SA',
   sa: 'SA',
   as: 'AS',
 };

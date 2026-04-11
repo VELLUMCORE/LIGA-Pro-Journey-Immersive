@@ -88,11 +88,11 @@ let activeId = 0;
 const mixedRegionCountries = [
   { code: 'eu', name: 'Europe', continentCode: 'EU' },
   { code: 'na', name: 'North America', continentCode: 'NA' },
-  { code: 'sa', name: 'South America', continentCode: 'SA' },
+  { code: 'xsa', name: 'South America', continentCode: 'SA' },
   { code: 'as', name: 'Asia', continentCode: 'AS' },
 ] as const;
 
-const mixedRegionCodes = new Set(['EU', 'NA', 'SA', 'AS']);
+const mixedRegionCodes = new Set(['EU', 'NA', 'XSA', 'AS']);
 const exhibitionSaveFileRegex = /^save_9\d{13}\.db(?:-(?:shm|wal))?$/i;
 
 /** @class */
@@ -177,6 +177,41 @@ export default class DatabaseClient {
       select: { id: true, code: true },
     });
     const continentIdByCode = new Map(continents.map((continent) => [continent.code.toUpperCase(), continent.id]));
+
+    // Legacy fix: older builds used "SA"/"XSA" for the mixed South America row.
+    // Canonicalize to lowercase "xsa" without violating unique(code|name) constraints.
+    const canonicalSouthAmerica = await prisma.country.findUnique({
+      where: { code: 'xsa' },
+      select: { id: true },
+    });
+    const legacySouthAmerica = await prisma.country.findUnique({
+      where: { name: 'South America' },
+      select: { id: true, code: true },
+    });
+
+    if (legacySouthAmerica && legacySouthAmerica.code !== 'xsa') {
+      if (canonicalSouthAmerica && canonicalSouthAmerica.id !== legacySouthAmerica.id) {
+        await prisma.player.updateMany({
+          where: { countryId: legacySouthAmerica.id },
+          data: { countryId: canonicalSouthAmerica.id },
+        });
+        await prisma.team.updateMany({
+          where: { countryId: legacySouthAmerica.id },
+          data: { countryId: canonicalSouthAmerica.id },
+        });
+        await prisma.country.delete({ where: { id: legacySouthAmerica.id } }).catch(() => Promise.resolve());
+      } else {
+        await prisma.country.update({
+          where: { id: legacySouthAmerica.id },
+          data: { code: 'xsa' },
+        }).catch(() => Promise.resolve());
+      }
+    }
+
+    await prisma.country.update({
+      where: { code: 'XSA' },
+      data: { code: 'xsa' },
+    }).catch(() => Promise.resolve());
 
     for (const country of mixedRegionCountries) {
       const continentId = continentIdByCode.get(country.continentCode);
