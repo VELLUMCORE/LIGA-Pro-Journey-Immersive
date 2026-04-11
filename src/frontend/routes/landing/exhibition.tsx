@@ -234,6 +234,9 @@ export default function () {
   const [playerPool, setPlayerPool] = React.useState<
     Awaited<ReturnType<typeof api.play.exhibitionPlayers<typeof Eagers.player>>>
   >([]);
+  const [allPlayersPool, setAllPlayersPool] = React.useState<
+    Awaited<ReturnType<typeof api.play.exhibitionPlayers<typeof Eagers.player>>>
+  >([]);
   const [replacementCache, setReplacementCache] = React.useState<
     Record<number, Awaited<ReturnType<typeof api.play.exhibitionPlayers<typeof Eagers.player>>>[number]>
   >({});
@@ -426,12 +429,13 @@ export default function () {
 
     (currentEditingTeam?.players || []).forEach((player) => lookup.set(player.id, player));
     playerPool.forEach((player) => lookup.set(player.id, player as TeamData['players'][number]));
+    allPlayersPool.forEach((player) => lookup.set(player.id, player as TeamData['players'][number]));
     Object.values(replacementCache).forEach((player) =>
       lookup.set(player.id, player as TeamData['players'][number]),
     );
 
     return lookup;
-  }, [currentEditingTeam, playerPool, replacementCache]);
+  }, [allPlayersPool, currentEditingTeam, playerPool, replacementCache]);
   const currentRosterPlayers = currentEditingRoster
     .map((playerId) => {
       if (!Number.isInteger(playerId)) {
@@ -556,6 +560,66 @@ export default function () {
     }
 
     setRosterContextMenu(null);
+  };
+
+  const shuffleCurrentRoster = async () => {
+    if (!editingTeamId) {
+      return;
+    }
+
+    const isHomeTeam = editingTeamId === homeTeam?.id;
+    const activeRoster = isHomeTeam ? homeRoster : awayRoster;
+    const otherRoster = isHomeTeam ? awayRoster : homeRoster;
+    const lockedYouSlotIndex = isHomeTeam ? activeRoster.findIndex((playerId) => playerId === -1) : -1;
+
+    const allPlayers = allPlayersPool.length
+      ? allPlayersPool
+      : await api.play.exhibitionPlayers<typeof Eagers.player>(Eagers.player).then((players) => {
+        setAllPlayersPool(players);
+        return players;
+      });
+
+    const blockedPlayerIds = new Set(
+      otherRoster.filter((playerId): playerId is number => Number.isInteger(playerId) && playerId !== -1),
+    );
+    const candidatePool = (allPlayers.length ? allPlayers : currentEditingTeam?.players || [])
+      .filter((player) => !blockedPlayerIds.has(player.id))
+      .map((player) => player.id);
+
+    const uniqueCandidatePool = Array.from(new Set(candidatePool));
+    for (let i = uniqueCandidatePool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [uniqueCandidatePool[i], uniqueCandidatePool[j]] = [uniqueCandidatePool[j], uniqueCandidatePool[i]];
+    }
+
+    const nextRoster = Array.from(
+      { length: Constants.Application.SQUAD_MIN_LENGTH },
+      (): number | null => null,
+    );
+    if (lockedYouSlotIndex >= 0) {
+      nextRoster[lockedYouSlotIndex] = -1;
+    }
+
+    let candidateIndex = 0;
+    for (let slotIndex = 0; slotIndex < nextRoster.length; slotIndex++) {
+      if (slotIndex === lockedYouSlotIndex) {
+        continue;
+      }
+
+      if (candidateIndex >= uniqueCandidatePool.length) {
+        break;
+      }
+
+      nextRoster[slotIndex] = uniqueCandidatePool[candidateIndex];
+      candidateIndex += 1;
+    }
+
+    if (isHomeTeam) {
+      setHomeRoster(nextRoster);
+      return;
+    }
+
+    setAwayRoster(nextRoster);
   };
 
   return (
@@ -875,6 +939,15 @@ export default function () {
                     </button>
                   ))}
                 </div>
+                <button
+                  type="button"
+                  className="btn btn-sm mt-4 w-fit"
+                  onClick={() => {
+                    shuffleCurrentRoster();
+                  }}
+                >
+                  Shuffle Roster
+                </button>
               </article>
               <article className="flex min-h-0 flex-col">
                 <p className="mb-2 font-semibold">Choose Replacement</p>
