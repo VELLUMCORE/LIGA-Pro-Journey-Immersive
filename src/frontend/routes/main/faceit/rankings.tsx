@@ -1,7 +1,7 @@
 import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import faceitLogo from "../../../assets/faceit/faceit.png";
-import { LEVEL_IMAGES, LeaderboardPlayer, RANK_IMAGES } from "./faceit";
+import { getFaceitRankBadge, LEVEL_IMAGES, LeaderboardPlayer } from "./faceit";
 
 type RankingsRouteState = {
   fromFaceitRankingsButton?: boolean;
@@ -142,40 +142,43 @@ export default function FaceitRankings(): JSX.Element {
               ) : players.length === 0 ? (
                 <div className="px-4 py-4 text-sm opacity-60">No leaderboard data available.</div>
               ) : (
-                players.map((player) => (
-                  <div
-                    key={player.playerId}
-                    className="flex items-center justify-between px-4 py-2 bg-neutral-900/20"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="text-xs text-neutral-300 w-8">#{player.rank}</span>
-                      <img
-                        src={LEVEL_IMAGES[player.faceitLevel] || LEVEL_IMAGES[1]}
-                        className="w-6 h-6"
-                      />
-                      {player.countryCode ? (
-                        <span className={`fp ${player.countryCode}`} />
-                      ) : (
-                        <span className="w-4" />
-                      )}
-                      <span className="text-sm font-semibold truncate">{player.nickname}</span>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      {player.rank <= 10 ? (
+                players.map((player) => {
+                  const rankBadge = player.rank <= 100 ? getFaceitRankBadge(player.rank) : null;
+                  return (
+                    <div
+                      key={player.playerId}
+                      className="flex items-center justify-between px-4 py-2 bg-neutral-900/20"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xs text-neutral-300 w-8">#{player.rank}</span>
                         <img
-                          src={RANK_IMAGES[Math.min(10, Math.max(1, player.rank))] || RANK_IMAGES[10]}
-                          className="w-20 h-15"
+                          src={LEVEL_IMAGES[player.faceitLevel] || LEVEL_IMAGES[1]}
+                          className="w-6 h-6"
                         />
-                      ) : (
-                        <div className="w-20" />
-                      )}
-                      <span className="text-sm font-bold text-white min-w-[56px] text-right">
-                        {player.faceitElo}
-                      </span>
+                        {player.countryCode ? (
+                          <span className={`fp ${player.countryCode}`} />
+                        ) : (
+                          <span className="w-4" />
+                        )}
+                        <span className="text-sm font-semibold truncate">{player.nickname}</span>
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {rankBadge ? (
+                          <img
+                            src={rankBadge}
+                            className="w-20 h-15"
+                          />
+                        ) : (
+                          <div className="w-20" />
+                        )}
+                        <span className="text-sm font-bold text-white min-w-[56px] text-right">
+                          {player.faceitElo}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 

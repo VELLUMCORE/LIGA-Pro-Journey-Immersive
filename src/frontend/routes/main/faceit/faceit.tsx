@@ -18,16 +18,6 @@ import level7 from "../../../assets/faceit/7.png";
 import level8 from "../../../assets/faceit/8.png";
 import level9 from "../../../assets/faceit/9.png";
 import level10 from "../../../assets/faceit/10.png";
-import rank1 from "../../../assets/faceit/rank1.png";
-import rank2 from "../../../assets/faceit/rank2.png";
-import rank3 from "../../../assets/faceit/rank3.png";
-import rank4 from "../../../assets/faceit/rank4.png";
-import rank5 from "../../../assets/faceit/rank5.png";
-import rank6 from "../../../assets/faceit/rank6.png";
-import rank7 from "../../../assets/faceit/rank7.png";
-import rank8 from "../../../assets/faceit/rank8.png";
-import rank9 from "../../../assets/faceit/rank9.png";
-import rank10 from "../../../assets/faceit/rank10.png";
 import killsIcon from "../../../assets/faceit/kills.png";
 import deathsIcon from "../../../assets/faceit/deaths.png";
 import headshotIcon from "../../../assets/faceit/headshot.png";
@@ -52,18 +42,25 @@ export const LEVEL_IMAGES = [
 ];
 
 export const RANK_IMAGES = [
-  null,
-  rank1,
-  rank2,
-  rank3,
-  rank4,
-  rank5,
-  rank6,
-  rank7,
-  rank8,
-  rank9,
-  rank10,
+  null as string | null,
 ];
+
+const rankImagesContext = require.context("../../../assets/faceit", false, /^\.\/rank\d+\.png$/);
+
+for (const key of rankImagesContext.keys()) {
+  const match = key.match(/rank(\d+)\.png$/);
+  if (!match) continue;
+  const rank = Number(match[1]);
+  if (!Number.isFinite(rank) || rank < 1) continue;
+  const loadedBadge = rankImagesContext(key);
+  RANK_IMAGES[rank] =
+    typeof loadedBadge === "string" ? loadedBadge : loadedBadge?.default || null;
+}
+
+export const getFaceitRankBadge = (rank: number): string | null => {
+  const normalizedRank = Math.min(100, Math.max(1, Math.floor(rank)));
+  return RANK_IMAGES[normalizedRank] || null;
+};
 
 // ---------------------------------------------------------------------------
 // TYPES
@@ -2117,33 +2114,40 @@ function NormalFaceitBody({
                 <div className="px-4 py-4 text-sm opacity-60">No leaderboard data available.</div>
               ) : (
                 <div className="divide-y divide-[#ffffff10]">
-                  {leaderboard.slice(0, 5).map((player) => (
-                    <div
-                      key={player.playerId}
-                      className="flex items-center justify-between px-4 py-1.5 bg-neutral-900/20"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="text-xs text-neutral-300 w-6">#{player.rank}</span>
-                        <img
-                          src={LEVEL_IMAGES[player.faceitLevel] || LEVEL_IMAGES[1]}
-                          className="w-6 h-6"
-                        />
-                        {player.countryCode ? (
-                          <span className={`fp ${player.countryCode}`} />
-                        ) : (
-                          <span className="w-4" />
-                        )}
-                        <span className="text-sm font-semibold truncate">{player.nickname}</span>
+                  {leaderboard.slice(0, 5).map((player) => {
+                    const rankBadge = getFaceitRankBadge(player.rank);
+                    return (
+                      <div
+                        key={player.playerId}
+                        className="flex items-center justify-between px-4 py-1.5 bg-neutral-900/20"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-xs text-neutral-300 w-6">#{player.rank}</span>
+                          <img
+                            src={LEVEL_IMAGES[player.faceitLevel] || LEVEL_IMAGES[1]}
+                            className="w-6 h-6"
+                          />
+                          {player.countryCode ? (
+                            <span className={`fp ${player.countryCode}`} />
+                          ) : (
+                            <span className="w-4" />
+                          )}
+                          <span className="text-sm font-semibold truncate">{player.nickname}</span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {rankBadge ? (
+                            <img
+                              src={rankBadge}
+                              className="w-17 h-11"
+                            />
+                          ) : (
+                            <div className="w-17" />
+                          )}
+                          <span className="text-sm font-bold text-white">{player.faceitElo}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <img
-                          src={RANK_IMAGES[Math.min(10, Math.max(1, player.rank))] || RANK_IMAGES[10]}
-                          className="w-17 h-11"
-                        />
-                        <span className="text-sm font-bold text-white">{player.faceitElo}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   <div className="px-4 py-3 bg-neutral-900/20">
                       <button
