@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { LEVEL_IMAGES } from "./faceit";
+import { getFaceitRankBadge, LEVEL_IMAGES } from "./faceit";
 import { Image } from "@liga/frontend/components";
 import { FaceitHeader } from "./faceit";
 import Scoreboard from "./scoreboard";
@@ -21,6 +21,7 @@ export type MatchPlayer = {
   id: number;
   name: string;
   elo: number;
+  rank?: number | null;
   level: number;
   role?: string | null;
   countryId: number;
@@ -669,6 +670,9 @@ export default function MatchRoom({
                     const showTop = isQueued && queue.index > 0;
                     const showBottom = isQueued && queue.index < queue.size - 1;
                     const playerLevel = resolvePlayerLevel(p);
+                    const rankBadge = p.rank && p.rank > 0 && p.rank <= 100
+                      ? getFaceitRankBadge(p.rank)
+                      : null;
 
                     return (
                       <div
@@ -704,11 +708,21 @@ export default function MatchRoom({
 
                         <div className="flex items-center gap-2">
                           <span className="opacity-70">{p.elo}</span>
-                          <img
-                            src={LEVEL_IMAGES[playerLevel]}
-                            className="w-8 h-8"
-                            alt={`Level ${playerLevel}`}
-                          />
+                          {rankBadge ? (
+                            <div className="relative ml-8 w-8 h-8 overflow-visible">
+                              <img
+                                src={rankBadge}
+                                className="absolute -right-4 top-1/2 h-16 w-20 -translate-y-1/2 scale-[3] object-contain object-right origin-right"
+                                alt={`Rank #${p.rank}`}
+                              />
+                            </div>
+                          ) : (
+                            <img
+                              src={LEVEL_IMAGES[playerLevel]}
+                              className="w-8 h-8"
+                              alt={`Level ${playerLevel}`}
+                            />
+                          )}
                         </div>
                       </div>
                     );
@@ -919,6 +933,9 @@ export default function MatchRoom({
                     const showTop = isQueued && queue.index > 0;
                     const showBottom = isQueued && queue.index < queue.size - 1;
                     const playerLevel = resolvePlayerLevel(p);
+                    const rankBadge = p.rank && p.rank > 0 && p.rank <= 100
+                      ? getFaceitRankBadge(p.rank)
+                      : null;
 
                     return (
                       <div
@@ -938,11 +955,21 @@ export default function MatchRoom({
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="opacity-70">{p.elo}</span>
-                          <img
-                            src={LEVEL_IMAGES[playerLevel]}
-                            className="w-8 h-8"
-                            alt={`Level ${playerLevel}`}
-                          />
+                          {rankBadge ? (
+                            <div className="relative ml-8 w-8 h-8 overflow-visible">
+                              <img
+                                src={rankBadge}
+                                className="absolute -right-4 top-1/2 h-16 w-20 -translate-y-1/2 scale-[3] object-contain object-right origin-right"
+                                alt={`Rank #${p.rank}`}
+                              />
+                            </div>
+                          ) : (
+                            <img
+                              src={LEVEL_IMAGES[playerLevel]}
+                              className="w-8 h-8"
+                              alt={`Level ${playerLevel}`}
+                            />
+                          )}
                         </div>
 
                         {isQueued && (

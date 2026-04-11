@@ -16,6 +16,7 @@ export interface MatchPlayer {
   name: string;
   xp: number;
   elo: number;
+  rank?: number | null;
   level: number;
   role: string | null;
   personality: string | null;
@@ -281,12 +282,54 @@ export class FaceitMatchmaker {
 
     if (!fullPlayer) throw new Error("Player not found");
 
+    const allPlayersForRank = await prisma.player.findMany({
+      select: {
+        id: true,
+        elo: true,
+        country: {
+          select: {
+            continent: {
+              select: {
+                federationId: true,
+              },
+            },
+          },
+        },
+        team: {
+          select: {
+            competitionFederationId: true,
+          },
+        },
+      },
+    });
+
     const userDb = fullPlayer;
     const userElo = baseProfile.faceitElo;
     const queueElo = Number.isFinite(user.queueElo) ? Math.round(user.queueElo as number) : userElo;
     const federationId =
       userDb.team?.competitionFederationId ??
       userDb.country.continent.federation.id;
+
+    const rankingByPlayerId = new Map<number, number>();
+    const rankedPlayers = allPlayersForRank
+      .map((player: {
+        id: number;
+        elo: number;
+        country: { continent: { federationId: number } };
+        team: { competitionFederationId: number | null } | null;
+      }) => ({
+        id: player.id,
+        elo: player.id === userDb.id ? userElo : player.elo,
+        federationId:
+          player.team?.competitionFederationId ??
+          player.country.continent.federationId,
+      }))
+      .filter((player: { federationId: number }) => player.federationId === federationId)
+      .sort((a: { elo: number }, b: { elo: number }) => b.elo - a.elo);
+
+    rankedPlayers.forEach((player: { id: number }, index: number) => {
+      rankingByPlayerId.set(player.id, index + 1);
+    });
 
     // -------------------------------------------------
     // 3. Get bots in region & Elo range
@@ -358,6 +401,7 @@ export class FaceitMatchmaker {
       name: b.name,
       xp: b.xp,
       elo: b.elo,
+      rank: rankingByPlayerId.get(b.id) ?? null,
       level: levelFromElo(b.elo),
       role: b.role,
       personality: b.personality,
@@ -372,6 +416,7 @@ export class FaceitMatchmaker {
       name: userDb.name,
       xp: userDb.xp,
       elo: userElo,
+      rank: rankingByPlayerId.get(userDb.id) ?? null,
       level: levelFromElo(userElo),
       role: userDb.role,
       personality: userDb.personality,
