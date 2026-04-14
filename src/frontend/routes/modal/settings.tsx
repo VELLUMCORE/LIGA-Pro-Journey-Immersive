@@ -452,23 +452,6 @@ export default function () {
                 </select>
               </article>
             </section>
-            <section>
-              <header>
-                <p>{t('settings.loopExitTitle')}</p>
-                <p>{t('settings.loopExitSubtitle')}</p>
-              </header>
-              <article>
-                <input
-                  type="checkbox"
-                  className="toggle"
-                  onChange={(event) =>
-                    onSettingsUpdate('calendar.ignoreExits', event.target.checked)
-                  }
-                  checked={settings.calendar.ignoreExits}
-                  value={String(settings.calendar.ignoreExits)}
-                />
-              </article>
-            </section>
           </fieldset>
         )}
       </form>

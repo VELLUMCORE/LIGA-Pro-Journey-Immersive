@@ -909,7 +909,6 @@ export const Settings = {
   },
   calendar: {
     calendarDateFormat: CalendarDateFormat.EU,
-    ignoreExits: false,
     maxIterations: 8,
     unit: CalendarUnit.DAY,
   },

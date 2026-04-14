@@ -101,7 +101,7 @@ async function advanceOneDayFromFaceit(prisma: any, profileId: number) {
   const profile = await prisma.profile.findFirst({ where: { id: profileId } });
   if (!profile) return;
   const settings = Util.loadSettings(profile.settings);
-  await Engine.Runtime.Instance.start(1, settings.calendar.ignoreExits);
+  await Engine.Runtime.Instance.start(1);
 }
 
 async function getFaceitLeaderboard(

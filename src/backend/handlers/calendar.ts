@@ -393,7 +393,7 @@ export default function () {
       days = differenceInDays(to, from);
     }
 
-    await Engine.Runtime.Instance.start(days, settings.calendar.ignoreExits);
+    await Engine.Runtime.Instance.start(days);
 
     WindowManager.get(Constants.WindowIdentifier.Main).off("close", disableClose);
     WindowManager.enableMenu(Constants.WindowIdentifier.Main);
