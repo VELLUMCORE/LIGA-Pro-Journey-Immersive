@@ -381,14 +381,18 @@ export default function LeagueStatsConcept(): JSX.Element {
 
     matchesByFilters.forEach((match: any) => {
       const ownTeam = match.competitors.find((competitor: any) => careerTeamIds.includes(competitor.teamId));
-      const userTeamStints = careerStints.filter((stint: any) => stint.teamId === ownTeam?.teamId);
+      const userTeamStints = careerStints.filter(
+        (stint: any) =>
+          stint.teamId === ownTeam?.teamId && isWithinStint(match.date, stint.startedAt, stint.endedAt),
+      );
       (match.players || []).forEach((player: any) => {
         if (player.id === selfId) {
           return;
         }
 
         const teammateStints = (player.careerStints || []).filter(
-          (stint: any) => stint.teamId === ownTeam?.teamId,
+          (stint: any) =>
+            stint.teamId === ownTeam?.teamId && isWithinStint(match.date, stint.startedAt, stint.endedAt),
         );
         const hasOverlap = teammateStints.some((teammateStint: any) =>
           userTeamStints.some((userStint: any) =>
@@ -459,8 +463,32 @@ export default function LeagueStatsConcept(): JSX.Element {
     const teammateId = Number(selectedTeammateId);
 
     return matchesByFilters.flatMap((match: any) => {
-      const played = (match.players || []).some((player: any) => player.id === teammateId);
-      if (!played) {
+      const ownTeam = match.competitors.find((competitor: any) => careerTeamIds.includes(competitor.teamId));
+      const userTeamStints = careerStints.filter(
+        (stint: any) =>
+          stint.teamId === ownTeam?.teamId && isWithinStint(match.date, stint.startedAt, stint.endedAt),
+      );
+      const teammate = (match.players || []).find((player: any) => player.id === teammateId);
+      if (!teammate) {
+        return [];
+      }
+
+      const teammateStints = (teammate.careerStints || []).filter(
+        (stint: any) =>
+          stint.teamId === ownTeam?.teamId && isWithinStint(match.date, stint.startedAt, stint.endedAt),
+      );
+      const playedAsTeammate = teammateStints.some((teammateStint: any) =>
+        userTeamStints.some((userStint: any) =>
+          stintsOverlap(
+            teammateStint.startedAt,
+            teammateStint.endedAt,
+            userStint.startedAt,
+            userStint.endedAt,
+          ),
+        ),
+      );
+
+      if (!playedAsTeammate) {
         return [];
       }
 
@@ -480,7 +508,7 @@ export default function LeagueStatsConcept(): JSX.Element {
       const performance = getPlayerPerformanceFromEvents(teammateId, eventsForStats);
       return [{ match, ...performance }];
     });
-  }, [matchesByFilters, selectedTeammateId, selectedMap]);
+  }, [matchesByFilters, selectedTeammateId, selectedMap, careerTeamIds, careerStints]);
 
   const tournamentRows = React.useMemo(() => {
     const grouped = new Map<
