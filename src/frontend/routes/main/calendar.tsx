@@ -11,6 +11,7 @@ import {
   endOfWeek,
   format,
   getDay,
+  isSameDay,
   startOfMonth,
   startOfWeek,
   subMonths,
@@ -105,7 +106,7 @@ export default function () {
 
   // load spotlight on initial fetch of matches
   React.useEffect(() => {
-    const matchday = matches.find((match) => match.date.toISOString() === current.toISOString());
+    const matchday = matches.find((match) => isSameDay(match.date, current));
 
     if (spotlight || !matchday) {
       return;
@@ -255,9 +256,9 @@ export default function () {
                       key={day?.toString() || dayIdx + '__empty_day'}
                       className={cx(
                         'border-base-content/10 h-24 border align-top',
-                        day?.toISOString() === today.toISOString() && 'bg-primary/10',
+                        !!day && isSameDay(day, today) && 'bg-primary/10',
                         !!spotlight &&
-                          day?.toISOString() === spotlight.date.toISOString() &&
+                          !!day && isSameDay(day, spotlight.date) &&
                           'bg-base-300',
                       )}
                     >
@@ -267,7 +268,7 @@ export default function () {
                         }
 
                         const matchday = matches.find(
-                          (match) => match.date.toISOString() === day.toISOString(),
+                          (match) => isSameDay(match.date, day),
                         );
 
                         if (!matchday) {
