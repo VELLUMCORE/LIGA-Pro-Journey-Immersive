@@ -9,6 +9,7 @@ import Dashboard from './dashboard';
 import Inbox from './inbox';
 import Players from './players';
 import Squad from './squad';
+import Stats from './stats';
 import Teams from './teams';
 import Faceit from "./faceit/faceit";
 import FaceitDetailedStatistics from "./faceit/detailed-statistics";
@@ -26,6 +27,7 @@ export default {
   Inbox,
   Players,
   Squad,
+  Stats,
   Faceit,
   FaceitDetailedStatistics,
   FaceitRankings,

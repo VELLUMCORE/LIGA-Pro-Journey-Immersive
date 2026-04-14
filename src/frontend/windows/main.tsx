@@ -99,6 +99,10 @@ const routes = createMemoryRouter([
         element: <Routes.Main.Calendar />,
       },
       {
+        path: '/stats',
+        element: <Routes.Main.Stats />,
+      },
+      {
         path: '/faceit',
         element: <Routes.Main.Faceit />,
       },
@@ -276,6 +280,7 @@ function Root() {
     ['/', t('navigation.dashboard')],
     ['/inbox', t('navigation.inbox')],
     ['/squad', t('navigation.squadHub')],
+    ['/stats', 'Stats'],
     ['/faceit', 'FACEIT'],
     ['/teams', t('navigation.teams'), useMatch('/teams/*')],
     ['/players', t('navigation.players')],
