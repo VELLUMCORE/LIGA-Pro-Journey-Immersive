@@ -23,7 +23,10 @@ interface ScoreboardProps {
   competitor: Matches<typeof Eagers.matchEvents>[number]['competitors'][number];
   match: Matches<typeof Eagers.matchEvents>[number];
   matchGame?: MatchGame;
+  vetoes: Array<MatchVetoEntry>;
 }
+
+type MatchVetoEntry = Awaited<ReturnType<typeof api.match.findVetoList>>[number];
 
 /** @enum */
 enum Rating {
@@ -133,6 +136,10 @@ function Scoreboard(props: ScoreboardProps) {
     () => matchEvents.filter((event) => event.weapon !== null || event.assistId),
     [matchEvents],
   );
+  const veto = React.useMemo(
+    () => props.matchGame && props.vetoes.find((entry) => entry.map === props.matchGame.map),
+    [props.matchGame, props.vetoes],
+  );
 
   return (
     <table className="table-xs table">
@@ -144,6 +151,9 @@ function Scoreboard(props: ScoreboardProps) {
                 <img src={props.competitor.team.blazon} className="mr-2 inline-block size-4" />
               )}
               {props.competitor.team.name}
+              {!!veto && veto.teamId === props.competitor.teamId && (
+                <span className="badge badge-xs ml-2 uppercase">pick</span>
+              )}
             </p>
           </th>
           <th title="Rating" className="w-[10%] text-center">
@@ -230,6 +240,7 @@ export default function () {
   const { state } = React.useContext(AppStateContext);
   const [match, setMatch] = React.useState<Matches<typeof Eagers.matchEvents>[number]>();
   const [matchGame, setMatchGame] = React.useState<MatchGame>();
+  const [vetoes, setVetoes] = React.useState<Array<MatchVetoEntry>>([]);
   const [settings, setSettings] = React.useState(Constants.Settings);
 
   // grab match data
@@ -247,6 +258,14 @@ export default function () {
       })
       .then((matches) => setMatch(matches[0]));
   }, []);
+
+  React.useEffect(() => {
+    if (!match) {
+      return;
+    }
+
+    api.match.findVetoList(match.id).then(setVetoes);
+  }, [match]);
 
   // load settings
   React.useEffect(() => {
@@ -386,7 +405,7 @@ export default function () {
           ))}
         </section>
       )}
-      <Scoreboard competitor={home} match={match} matchGame={matchGame} />
+      <Scoreboard competitor={home} match={match} matchGame={matchGame} vetoes={vetoes} />
       {(match.games.length === 1 || !!matchGame) && (
         <table className="table-xs table">
           <thead>
@@ -432,7 +451,7 @@ export default function () {
           </tbody>
         </table>
       )}
-      <Scoreboard competitor={away} match={match} matchGame={matchGame} />
+      <Scoreboard competitor={away} match={match} matchGame={matchGame} vetoes={vetoes} />
       <section className="h-0 flex-grow overflow-x-auto">
         {(match.games.length === 1 || !!matchGame) && (
           <table className="table-pin-rows table-xs table">

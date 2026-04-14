@@ -21,6 +21,13 @@ type DailyState = {
   date: string;
 };
 
+type MatchVetoInput = {
+  type: string;
+  map: string;
+  teamId?: number | null;
+};
+type MatchVetoRecord = MatchVetoInput & { id: number };
+
 /**
  * Exports this module.
  *
@@ -244,8 +251,12 @@ export default {
       ipcRenderer.invoke(Constants.IPCRoute.MATCH_FIND, query) as Promise<
         Prisma.MatchGetPayload<unknown>
       >,
+    findVetoList: (id: number) =>
+      ipcRenderer.invoke(Constants.IPCRoute.MATCH_FIND_VETO_LIST, id) as Promise<Array<MatchVetoRecord>>,
     updateMapList: (id: number, mapList: Array<string>) =>
       ipcRenderer.invoke(Constants.IPCRoute.MATCH_UPDATE_MAP_LIST, id, mapList) as Promise<unknown>,
+    updateVetoList: (id: number, vetoList: Array<MatchVetoInput>) =>
+      ipcRenderer.invoke(Constants.IPCRoute.MATCH_UPDATE_VETO_LIST, id, vetoList) as Promise<unknown>,
   },
   matches: {
     all: <T = typeof Eagers.match>(query: Prisma.MatchFindManyArgs) =>

@@ -237,6 +237,7 @@ model Match {
   events              MatchEvent[]
   games               Game[]
   competitors         MatchToTeam[]
+  vetoes              MatchVeto[]
 
   // belongs to
   competition         Competition?        @relation(fields: [competitionId], references: [id])
@@ -278,6 +279,18 @@ model MatchToTeam {
 
   // has many
   rounds              MatchEvent[]
+
+  // belongs to
+  match               Match               @relation(fields: [matchId], references: [id])
+  matchId             Int
+  team                Team?               @relation(fields: [teamId], references: [id])
+  teamId              Int?
+}
+
+model MatchVeto {
+  id                  Int                 @id @default(autoincrement())
+  type                String
+  map                 String
 
   // belongs to
   match               Match               @relation(fields: [matchId], references: [id])
@@ -393,6 +406,7 @@ model Team {
   transfersIn         Transfer[]          @relation("to")
   transfersOut        Transfer[]          @relation("from")
   careerStints        CareerStint[]
+  vetoes              MatchVeto[]
 
   // has one
   profile             Profile?

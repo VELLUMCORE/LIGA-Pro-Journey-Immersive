@@ -10,6 +10,26 @@ import { Constants, Eagers } from '@liga/shared';
 import { DatabaseClient } from '@liga/backend/lib';
 import { Prisma } from '@prisma/client';
 
+type MatchVetoInput = {
+  type?: string;
+  map?: string;
+  teamId?: number | null;
+};
+
+async function ensureMatchVetoTable() {
+  await DatabaseClient.prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "MatchVeto" (
+      "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+      "type" TEXT NOT NULL,
+      "map" TEXT NOT NULL,
+      "matchId" INTEGER NOT NULL,
+      "teamId" INTEGER,
+      CONSTRAINT "MatchVeto_matchId_fkey" FOREIGN KEY ("matchId") REFERENCES "Match" ("id") ON DELETE RESTRICT ON UPDATE CASCADE,
+      CONSTRAINT "MatchVeto_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team" ("id") ON DELETE SET NULL ON UPDATE CASCADE
+    )
+  `);
+}
+
 /**
  * Register the IPC event handlers.
  *
@@ -19,6 +39,13 @@ export default function () {
   ipcMain.handle(Constants.IPCRoute.MATCH_FIND, (_, query: Prisma.MatchFindFirstArgs) =>
     DatabaseClient.prisma.match.findFirst(query),
   );
+  ipcMain.handle(Constants.IPCRoute.MATCH_FIND_VETO_LIST, async (_, id: number) => {
+    await ensureMatchVetoTable();
+
+    return DatabaseClient.prisma.$queryRaw<
+      Array<{ id: number; type: string; map: string; teamId: number | null }>
+    >`SELECT "id", "type", "map", "teamId" FROM "MatchVeto" WHERE "matchId" = ${id} ORDER BY "id" ASC`;
+  });
   ipcMain.handle(
     Constants.IPCRoute.MATCH_UPDATE_MAP_LIST,
     async (_, id: number, maps: Array<string>) => {
@@ -64,6 +91,26 @@ export default function () {
           },
         },
       });
+    },
+  );
+  ipcMain.handle(
+    Constants.IPCRoute.MATCH_UPDATE_VETO_LIST,
+    async (_, id: number, data: Array<MatchVetoInput>) => {
+      const vetoes = data.filter((item) => !!item.type && !!item.map);
+      await ensureMatchVetoTable();
+
+      await DatabaseClient.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`DELETE FROM "MatchVeto" WHERE "matchId" = ${id}`;
+
+        for (const item of vetoes) {
+          await tx.$executeRaw`
+            INSERT INTO "MatchVeto" ("type", "map", "matchId", "teamId")
+            VALUES (${item.type}, ${item.map}, ${id}, ${item.teamId ?? null})
+          `;
+        }
+      });
+
+      return true;
     },
   );
   ipcMain.handle(Constants.IPCRoute.MATCHES_ALL, (_, query: Prisma.MatchFindManyArgs) =>
