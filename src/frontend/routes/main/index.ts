@@ -11,6 +11,7 @@ import Players from './players';
 import Squad from './squad';
 import Teams from './teams';
 import Faceit from "./faceit/faceit";
+import FaceitDetailedStatistics from "./faceit/detailed-statistics";
 import FaceitRankings from "./faceit/rankings";
 
 /**
@@ -26,6 +27,7 @@ export default {
   Players,
   Squad,
   Faceit,
+  FaceitDetailedStatistics,
   FaceitRankings,
 
   // composite routes

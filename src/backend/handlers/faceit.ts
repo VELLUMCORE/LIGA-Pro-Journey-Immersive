@@ -264,6 +264,124 @@ function buildFaceitPseudoMatch(profile: any, room: MatchRoom, dbMatchId: number
   } as any;
 }
 
+async function getDetailedFaceitStats(prisma: any, profile: any) {
+  const playerId = profile.playerId;
+  const matches = await prisma.match.findMany({
+    where: {
+      profileId: profile.id,
+      matchType: "FACEIT_PUG",
+      status: Constants.MatchStatus.COMPLETED,
+    },
+    include: {
+      events: true,
+      games: true,
+    },
+    orderBy: { date: "desc" },
+  });
+
+  const mapStats: Record<string, any> = {};
+  let kills = 0;
+  let deaths = 0;
+  let headshots = 0;
+  let wins = 0;
+  let highestKills = 0;
+  const eloHistoryDesc: Array<{
+    matchId: number;
+    date: Date;
+    elo: number;
+    eloDelta: number;
+    map: string;
+  }> = [];
+  let currentEloAfterMatch = Number(profile.faceitElo || 0);
+
+  for (const match of matches) {
+    eloHistoryDesc.push({
+      matchId: match.id,
+      date: match.date,
+      elo: currentEloAfterMatch,
+      eloDelta: Number(match.faceitEloDelta || 0),
+      map: match.games?.[0]?.map || "unknown",
+    });
+    currentEloAfterMatch -= Number(match.faceitEloDelta || 0);
+
+    const mapSlug = match.games?.[0]?.map || "unknown";
+    let matchKills = 0;
+    let matchDeaths = 0;
+    let matchHeadshots = 0;
+
+    for (const event of match.events || []) {
+      if (event.attackerId === playerId) {
+        matchKills++;
+        if (event.headshot) matchHeadshots++;
+      }
+      if (event.victimId === playerId) {
+        matchDeaths++;
+      }
+    }
+
+    const mapEntry = mapStats[mapSlug] || {
+      kills: 0,
+      deaths: 0,
+      headshots: 0,
+      matchesPlayed: 0,
+      wins: 0,
+      losses: 0,
+      highestKills: 0,
+    };
+
+    mapEntry.kills += matchKills;
+    mapEntry.deaths += matchDeaths;
+    mapEntry.headshots += matchHeadshots;
+    mapEntry.matchesPlayed += 1;
+    mapEntry.wins += match.faceitIsWin === true ? 1 : 0;
+    mapEntry.losses += match.faceitIsWin === true ? 0 : 1;
+    mapEntry.highestKills = Math.max(mapEntry.highestKills, matchKills);
+    mapStats[mapSlug] = mapEntry;
+
+    kills += matchKills;
+    deaths += matchDeaths;
+    headshots += matchHeadshots;
+    wins += match.faceitIsWin === true ? 1 : 0;
+    highestKills = Math.max(highestKills, matchKills);
+  }
+
+  const matchesPlayed = matches.length;
+  const losses = matchesPlayed - wins;
+
+  const normalize = (entry: any) => ({
+    kills: entry.kills,
+    deaths: entry.deaths,
+    hsPercent: entry.kills > 0 ? (entry.headshots / entry.kills) * 100 : 0,
+    kdRatio: entry.deaths > 0 ? entry.kills / entry.deaths : entry.kills,
+    highestKills: entry.highestKills,
+    matchesPlayed: entry.matchesPlayed,
+    wins: entry.wins,
+    losses: entry.losses,
+    winRate: entry.matchesPlayed > 0 ? (entry.wins / entry.matchesPlayed) * 100 : 0,
+  });
+
+  const byMap: Record<string, any> = {};
+  for (const [mapSlug, entry] of Object.entries(mapStats)) {
+    byMap[mapSlug] = normalize(entry);
+  }
+
+  const eloHistory = [...eloHistoryDesc].reverse();
+
+  return {
+    allTime: normalize({
+      kills,
+      deaths,
+      headshots,
+      highestKills,
+      matchesPlayed,
+      wins,
+      losses,
+    }),
+    byMap,
+    eloHistory,
+  };
+}
+
 
 export default function registerFaceitHandlers() {
 
@@ -418,6 +536,13 @@ export default function registerFaceitHandlers() {
     if (!profile) throw new Error("No active profile");
 
     return computeLifetimeStats(profile.id, profile.playerId, 20);
+  });
+
+  ipcMain.handle("faceit:getDetailedStats", async () => {
+    const prisma = await DatabaseClient.connect();
+    const profile = await prisma.profile.findFirst({ include: { player: true } });
+    if (!profile) throw new Error("No active profile");
+    return getDetailedFaceitStats(prisma, profile);
   });
 
   // ------------------------------------------------------

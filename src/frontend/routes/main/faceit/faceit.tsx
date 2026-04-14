@@ -2040,6 +2040,22 @@ function NormalFaceitBody({
             <div className="text-xs opacity-60 mt-1">Avg Kills</div>
           </div>
         </div>
+
+        <div className="px-4 pb-4 mt-auto">
+          <button
+            onClick={() =>
+              navigate("/faceit/detailed-statistics", {
+                state: {
+                  fromFaceitDetailedStatisticsButton: true,
+                },
+              })
+            }
+            className="relative w-full flex items-center justify-center rounded-md border border-[#ffffff20] px-3 py-2 text-sm font-semibold hover:border-[#ff7300]/70 hover:bg-neutral-800/70 transition"
+          >
+            <span className="text-white">DETAILED STATISTICS</span>
+            <span className="absolute right-3 text-neutral-300">→</span>
+          </button>
+        </div>
       </div>
 
       {/* ------------------------------------------------------------------- */}

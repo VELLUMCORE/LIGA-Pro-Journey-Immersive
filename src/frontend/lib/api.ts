@@ -212,6 +212,41 @@ export default {
         kdRatio: number;
         hsPercent: number;
       }>,
+    detailedStats: () =>
+      ipcRenderer.invoke("faceit:getDetailedStats") as Promise<{
+        allTime: {
+          kills: number;
+          deaths: number;
+          hsPercent: number;
+          kdRatio: number;
+          highestKills: number;
+          matchesPlayed: number;
+          wins: number;
+          losses: number;
+          winRate: number;
+        };
+        byMap: Record<
+          string,
+          {
+            kills: number;
+            deaths: number;
+            hsPercent: number;
+            kdRatio: number;
+            highestKills: number;
+            matchesPlayed: number;
+            wins: number;
+            losses: number;
+            winRate: number;
+          }
+        >;
+        eloHistory: Array<{
+          matchId: number;
+          date: string | Date;
+          elo: number;
+          eloDelta: number;
+          map: string;
+        }>;
+      }>,
   },
   ipc: {
     invoke: (route: string, payload: unknown) =>
