@@ -354,6 +354,7 @@ export class Server {
   private faceitRoom: any;
   private faceitSides?: Record<number, "t" | "ct">;
   private faceitUserSide?: "t" | "ct";
+  private sideTeamIds?: { t: number; ct: number };
   private clientLaunchedViaSteam: boolean;
 
   public getFaceitSides() {
@@ -361,6 +362,9 @@ export class Server {
   }
   public getFaceitUserSide() {
     return this.faceitUserSide;
+  }
+  public getSideTeamIds() {
+    return this.sideTeamIds;
   }
 
   public competitors: Server['match']['competitors'];
@@ -969,6 +973,57 @@ End\n
       if (maybeCT) ctTeam = maybeCT;
     }
 
+    if (!this.isFaceit && !isCustomGame && !this.spectating && this.profile.teamId) {
+      const userCompetitor = this.competitors.find(
+        (competitor) => competitor.teamId === this.profile.teamId,
+      ) as any;
+      const enemyCompetitor = this.competitors.find(
+        (competitor) => competitor.teamId !== this.profile.teamId,
+      ) as any;
+
+      if (userCompetitor && enemyCompetitor) {
+        let userStartsT = Math.random() < 0.5;
+
+        // BO1 is random. For BO3/BO5:
+        // - user's pick => user starts T
+        // - enemy pick => user starts CT
+        // - decider => random
+        if (this.match.games.length > 1 && this.match?.id) {
+          try {
+            const vetoEntries = await DatabaseClient.prisma.$queryRaw<
+              Array<{ type: string; map: string; teamId: number | null }>
+            >`SELECT "type", "map", "teamId" FROM "MatchVeto" WHERE "matchId" = ${this.match.id} ORDER BY "id" ASC`;
+
+            const currentMap = this.matchGame?.map;
+            const currentVeto = vetoEntries.find((entry) => entry.map === currentMap);
+            const vetoType = currentVeto?.type?.toLowerCase();
+
+            if (vetoType === Constants.MapVetoAction.PICK) {
+              userStartsT = currentVeto?.teamId === this.profile.teamId;
+            } else if (vetoType === Constants.MapVetoAction.DECIDER) {
+              userStartsT = Math.random() < 0.5;
+            } else if (currentVeto?.teamId != null) {
+              userStartsT = currentVeto.teamId === this.profile.teamId;
+            }
+          } catch (error) {
+            this.log.warn(
+              'Unable to resolve side assignment from vetoes for match(id=%d): %s',
+              this.match.id,
+              (error as Error)?.message || 'unknown error',
+            );
+          }
+        }
+
+        tTeam = userStartsT ? userCompetitor : enemyCompetitor;
+        ctTeam = userStartsT ? enemyCompetitor : userCompetitor;
+      }
+    }
+
+    this.sideTeamIds = {
+      t: tTeam.teamId,
+      ct: ctTeam.teamId,
+    };
+
     const humanteam =
       this.spectating
         ? 'any'
@@ -978,16 +1033,16 @@ End\n
             ? 'CT'
             : 'any';
 
-    let homeStats: any;
-    let awayStats: any;
+    let tStats: any;
+    let ctStats: any;
 
     if (!this.isFaceit) {
-      [homeStats, awayStats] = [
+      [tStats, ctStats] = [
         this.match.competition.competitors.find(
-          (competitor) => competitor.teamId === home.teamId,
+          (competitor) => competitor.teamId === tTeam.teamId,
         ),
         this.match.competition.competitors.find(
-          (competitor) => competitor.teamId === away.teamId,
+          (competitor) => competitor.teamId === ctTeam.teamId,
         ),
       ];
     }
@@ -1044,8 +1099,8 @@ End\n
         maxrounds: this.settings.matchRules.maxRounds,
         ot: +this.overtime,
         rcon_password: Constants.GameSettings.RCON_PASSWORD,
-        teamname_t: home.team.name,
-        teamname_ct: away.team.name,
+        teamname_t: tTeam.team.name,
+        teamname_ct: ctTeam.team.name,
         gameover_delay: Constants.GameSettings.SERVER_CVAR_GAMEOVER_DELAY,
         spectating: +this.spectating,
         damage_prints: 0,
@@ -1057,12 +1112,12 @@ End\n
         humanteam,
 
         match_stat: this.match.competition.tier.name,
-        teamflag_t: home.team.country.code,
-        teamflag_ct: away.team.country.code,
-        shortname_t: resolveTeamBlazonName(home.team, home.team.slug),
-        shortname_ct: resolveTeamBlazonName(away.team, away.team.slug),
-        stat_t: Util.toOrdinalSuffix(homeStats.position),
-        stat_ct: Util.toOrdinalSuffix(awayStats.position),
+        teamflag_t: tTeam.team.country.code,
+        teamflag_ct: ctTeam.team.country.code,
+        shortname_t: resolveTeamBlazonName(tTeam.team, tTeam.team.slug),
+        shortname_ct: resolveTeamBlazonName(ctTeam.team, ctTeam.team.slug),
+        stat_t: tStats?.position ? Util.toOrdinalSuffix(tStats.position) : '',
+        stat_ct: ctStats?.position ? Util.toOrdinalSuffix(ctStats.position) : '',
       };
 
     const serverCfgRendered = Sqrl.render(serverTemplate, serverCfgData, {
@@ -1091,14 +1146,14 @@ End\n
     await fs.promises.mkdir(path.dirname(botCmdPath), { recursive: true });
 
     const bots = flatten(
-      this.competitors.map((competitor, idx) =>
+      this.competitors.map((competitor) =>
         competitor.team.players.map((player) => {
           const xp = new Bot.Exp(player);
 
           const side =
             this.isFaceit && this.faceitSides
               ? this.faceitSides[competitor.teamId] || 't'
-              : idx === 0
+              : competitor.teamId === tTeam.teamId
                 ? 't'
                 : 'ct';
           return {

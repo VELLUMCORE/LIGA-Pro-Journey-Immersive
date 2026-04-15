@@ -306,8 +306,15 @@ export default function () {
     // start the server and play the match
     const gameServer = new Game.Server(profile, match, null, spectating);
     await gameServer.start();
-    const [homeScore, awayScore] = gameServer.result.score;
     const [home, away] = match.competitors;
+    const sideTeamIds = gameServer.getSideTeamIds();
+    const [tScore, ctScore] = gameServer.result.score;
+    const scoreByTeamId = {
+      [sideTeamIds?.t ?? home.teamId]: tScore,
+      [sideTeamIds?.ct ?? away.teamId]: ctScore,
+    };
+    const homeScore = scoreByTeamId[home.teamId] ?? 0;
+    const awayScore = scoreByTeamId[away.teamId] ?? 0;
     const gameScore = {
       [home.teamId]: homeScore,
       [away.teamId]: awayScore,
@@ -480,6 +487,16 @@ export default function () {
                     rounds += 1;
 
                     // now we can return the data
+                    const winnerSideAtStart = invert
+                      ? 1 - eventRoundOver.winner
+                      : eventRoundOver.winner;
+                    const winnerTeamId = winnerSideAtStart === 0
+                      ? sideTeamIds?.t ?? match.competitors[0].teamId
+                      : sideTeamIds?.ct ?? match.competitors[1].teamId;
+                    const winnerCompetitorId = match.competitors.find(
+                      (competitor) => competitor.teamId === winnerTeamId,
+                    )?.id ?? match.competitors[invert ? 1 - eventRoundOver.winner : eventRoundOver.winner].id;
+
                     return {
                       half: currentHalf,
                       payload: JSON.stringify(event),
@@ -492,9 +509,7 @@ export default function () {
                       },
                       winner: {
                         connect: {
-                          id: match.competitors[
-                            invert ? 1 - eventRoundOver.winner : eventRoundOver.winner
-                          ].id,
+                          id: winnerCompetitorId,
                         },
                       },
                     };
