@@ -2404,11 +2404,11 @@ export async function onPlayerScoutingCheck(entry: Calendar) {
 
     // Cross-federation chance depends on user's level (baseline tier)
     // - Open/Intermediate/Main: never
-    // - Advanced: 5%
-    // - Pro: 10%
+    // - Advanced: 15%
+    // - Pro: 25%
     const crossFedPbx =
-      pickedTierIdx >= idxPro ? 10 :
-        pickedTierIdx >= idxAdv ? 5 :
+      pickedTierIdx >= idxPro ? 25 :
+        pickedTierIdx >= idxAdv ? 15 :
           0;
 
     const wantCrossFederation = crossFedPbx > 0 && Chance.rollD2(crossFedPbx);
