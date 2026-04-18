@@ -112,8 +112,25 @@ function stintsOverlap(
 }
 
 function getCompetitionLabel(match: MatchRecord) {
-  const federation = match.competition?.federation?.name || 'Unknown';
   const tierSlug = match.competition?.tier?.slug;
+
+  if (tierSlug === Constants.TierSlug.LEAGUE_PRO) {
+    return 'ESL Pro League';
+  }
+
+  if (tierSlug === Constants.TierSlug.LEAGUE_PRO_PLAYOFFS) {
+    return 'ESL Pro League Playoffs';
+  }
+
+  if (
+    tierSlug === Constants.TierSlug.MAJOR_CHALLENGERS_STAGE ||
+    tierSlug === Constants.TierSlug.MAJOR_LEGENDS_STAGE ||
+    tierSlug === Constants.TierSlug.MAJOR_CHAMPIONS_STAGE
+  ) {
+    return Constants.IdiomaticTier[tierSlug];
+  }
+
+  const federation = match.competition?.federation?.name || 'Unknown';
   const tier = tierSlug ? Constants.IdiomaticTier[tierSlug] : 'Competition';
 
   return `${federation} ${tier}`.trim();
