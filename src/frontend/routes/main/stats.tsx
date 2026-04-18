@@ -284,7 +284,6 @@ export default function LeagueStatsConcept(): JSX.Element {
         orderBy: {
           date: 'desc',
         },
-        take: 300,
       })
       .then((result: any[]) => setMatches(result.filter(isLeagueMatch)))
       .finally(() => setLoading(false));
