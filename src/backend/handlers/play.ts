@@ -387,7 +387,7 @@ export default function () {
       data: {
         status: matchCompleted ? Constants.MatchStatus.COMPLETED : match.status,
         competitors: {
-          update: match.competitors.map((competitor) => ({
+          update: match.competitors.map((competitor: { id: number; teamId: number }) => ({
             where: { id: competitor.id },
             data: {
               score: globalScore[competitor.teamId],
@@ -535,8 +535,7 @@ export default function () {
                     const winnerTeamId = winnerSideAtStart === 0
                       ? sideTeamIds?.t ?? match.competitors[0].teamId
                       : sideTeamIds?.ct ?? match.competitors[1].teamId;
-                    const winnerCompetitorId = match.competitors.find(
-                      (competitor) => competitor.teamId === winnerTeamId,
+                    const winnerCompetitorId = match.competitors.find((competitor: { id: number; teamId: number }) => competitor.teamId === winnerTeamId,
                     )?.id ?? match.competitors[invert ? 1 - eventRoundOver.winner : eventRoundOver.winner].id;
 
                     return {

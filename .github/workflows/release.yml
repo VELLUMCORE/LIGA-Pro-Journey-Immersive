@@ -13,6 +13,10 @@ jobs:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FIREBASE_CLIENT_EMAIL: ""
+      FIREBASE_KEY_ID: ""
+      FIREBASE_PROJECT_ID: ""
+      GH_ISSUES_CLIENT_ID: ""
 
     steps:
       - uses: actions/checkout@v5
@@ -40,10 +44,18 @@ jobs:
         env:
           GH_PUBLISH_API_KEY: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FIREBASE_CLIENT_EMAIL: ""
+          FIREBASE_KEY_ID: ""
+          FIREBASE_PROJECT_ID: ""
+          GH_ISSUES_CLIENT_ID: ""
         run: npm run publish -- --dry-run
 
       - name: Publish release
         env:
           GH_PUBLISH_API_KEY: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FIREBASE_CLIENT_EMAIL: ""
+          FIREBASE_KEY_ID: ""
+          FIREBASE_PROJECT_ID: ""
+          GH_ISSUES_CLIENT_ID: ""
         run: npm run publish -- --from-dry-run

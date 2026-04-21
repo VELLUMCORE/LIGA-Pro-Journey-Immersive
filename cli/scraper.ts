@@ -3,7 +3,8 @@
  *
  * @module
  */
-import * as PandaScore from './generated/pandascore';
+interface MinimalPandaPlayer { name: string; }
+interface MinimalPandaTeam { name: string; slug: string; players: MinimalPandaPlayer[]; }
 import util from 'node:util';
 import log from 'electron-log';
 import { camelCase, chunk, flatten, uniqBy, upperFirst } from 'lodash';
@@ -14,11 +15,9 @@ import { Chance, Constants } from '@liga/shared';
 import { CachedFetch } from '@liga/backend/lib';
 
 /** @type {TeamAPIResponse} */
-type TeamAPIResponse = PandaScore.components['schemas']['Team'];
-
+type TeamAPIResponse = MinimalPandaTeam;
 /** @type {PlayerAPIResponse} */
-type PlayerAPIResponse = PandaScore.components['schemas']['Player'];
-
+type PlayerAPIResponse = MinimalPandaPlayer;
 /** @interface */
 interface CLIArguments {
   batchLimit?: string;
@@ -201,7 +200,7 @@ async function buildPrismaPayload(data: Array<TeamAPIResponse | PlayerAPIRespons
             slug: item.slug,
             countryId: pickCountryId(),
             players: {
-              create: item.players.map((player) => ({
+              create: item.players.map((player: { name: string }) => ({
                 name: player.name,
                 countryId: pickCountryId(),
               })),
