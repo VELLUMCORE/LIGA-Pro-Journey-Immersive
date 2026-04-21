@@ -32,6 +32,16 @@ const DAYS_PER_WEEK = 7;
 /** @constant */
 const WEEKS_PER_MONTH = 6;
 
+function getCompetitionMode(match: MatchesResponse[number]) {
+  const isLan = Boolean(match.competition?.tier?.lan);
+  return {
+    mode: isLan ? 'Offline (LAN)' : 'Online',
+    venue: isLan
+      ? `${match.competition?.federation?.name || 'Global'} LAN studio / arena`
+      : `${match.competition?.federation?.name || 'Global'} online server`,
+  };
+}
+
 /**
  * Exports this module.
  *
@@ -84,6 +94,7 @@ export default function () {
 
   // grab the match data for the current month
   const [matches, setMatches] = React.useState<MatchesResponse>([]);
+  const [worldMatches, setWorldMatches] = React.useState<MatchesResponse>([]);
 
   React.useEffect(() => {
     api.matches
@@ -94,14 +105,33 @@ export default function () {
             gte: start.toISOString(),
             lte: end.toISOString(),
           },
-          competitors: {
-            some: {
-              teamId: state.profile?.teamId,
-            },
-          },
+          ...(state.profile?.teamId
+            ? {
+              competitors: {
+                some: {
+                  teamId: state.profile?.teamId,
+                },
+              },
+            }
+            : {}),
         },
       })
       .then(setMatches);
+
+    api.matches
+      .all({
+        ...Eagers.match,
+        where: {
+          competitionId: {
+            not: null,
+          },
+          date: {
+            gte: start.toISOString(),
+            lte: end.toISOString(),
+          },
+        },
+      })
+      .then(setWorldMatches);
   }, [start, end, state.profile]);
 
   // load spotlight on initial fetch of matches
@@ -114,6 +144,12 @@ export default function () {
 
     setSpotlight(matchday);
   }, [matches]);
+
+  const selectedDate = spotlight?.date || current;
+  const matchesOnSelectedDay = React.useMemo(
+    () => worldMatches.filter((match) => isSameDay(match.date, selectedDate)),
+    [worldMatches, selectedDate],
+  );
 
   return (
     <div className="dashboard">
@@ -144,8 +180,16 @@ export default function () {
                   <header className="prose border-t-0!">
                     <h2>{format(current, 'PPP')}</h2>
                   </header>
-                  <footer className="center h-24">
+                  <footer className="stack-y min-h-24 p-3">
                     <p>Click on a date to view match details.</p>
+                    {matchesOnSelectedDay.slice(0, 8).map((fixture) => (
+                      <div key={`fixture-empty-${fixture.id}`} className="flex items-center justify-between text-xs">
+                        <span>{format(fixture.date, 'p')} · {fixture.competitors.map((c) => c.team?.name || 'TBD').join(' vs ')}</span>
+                        {fixture.status !== Constants.MatchStatus.COMPLETED && isSameDay(fixture.date, today) && (
+                          <button className="btn btn-xs" onClick={() => api.play.start(true, fixture.id)}>Spectate</button>
+                        )}
+                      </div>
+                    ))}
                   </footer>
                 </article>
               );
@@ -177,6 +221,8 @@ export default function () {
                           ? `${t('shared.matchday')} ${spotlight.round}`
                           : Util.parseCupRounds(spotlight.round, spotlight.totalRounds)}
                       </h5>
+                      <p>{format(spotlight.date, 'p')}</p>
+                      <p>{getCompetitionMode(spotlight).mode} · {getCompetitionMode(spotlight).venue}</p>
                     </header>
                   </aside>
                   <aside className="center gap-2 pb-2">
@@ -232,6 +278,25 @@ export default function () {
                       {t('shared.viewMatchDetails')}
                     </button>
                   </aside>
+                  <aside className="stack-y px-2 pb-2">
+                    <h4 className="text-sm font-semibold">All fixtures on this date</h4>
+                    {matchesOnSelectedDay.map((fixture) => {
+                      const mode = getCompetitionMode(fixture);
+                      return (
+                        <div key={`fixture-${fixture.id}`} className="flex items-center justify-between gap-2 rounded border border-base-content/10 px-2 py-1">
+                          <div>
+                            <div className="text-sm">{fixture.competitors.map((c) => c.team?.name || 'TBD').join(' vs ')}</div>
+                            <div className="text-xs opacity-70">{format(fixture.date, 'p')} · {mode.mode}</div>
+                          </div>
+                          {fixture.status !== Constants.MatchStatus.COMPLETED && isSameDay(fixture.date, today) && (
+                            <button className="btn btn-xs" onClick={() => api.play.start(true, fixture.id)}>
+                              Spectate
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </aside>
                 </footer>
               </article>
             );
@@ -267,12 +332,22 @@ export default function () {
                           return <p />;
                         }
 
-                        const matchday = matches.find(
-                          (match) => isSameDay(match.date, day),
-                        );
+                        const matchday = matches.find((match) => isSameDay(match.date, day));
+                        const worldCount = worldMatches.filter((match) => isSameDay(match.date, day)).length;
 
                         if (!matchday) {
-                          return <h2>{day.getDate()}</h2>;
+                          return (
+                            <div
+                              className={cx('relative h-full w-full cursor-pointer')}
+                              onClick={() => {
+                                setCurrent(day);
+                                setSpotlight(undefined);
+                              }}
+                            >
+                              <h2>{day.getDate()}</h2>
+                              {worldCount > 0 && <span className="badge badge-xs">{worldCount} matches</span>}
+                            </div>
+                          );
                         }
 
                         const opponent = matchday.competitors.find(
@@ -281,10 +356,14 @@ export default function () {
 
                         return (
                           <div
-                            className={cx('relative h-full w-full', !!opponent && 'cursor-pointer')}
-                            onClick={() => !!opponent && setSpotlight(matchday)}
+                            className={cx('relative h-full w-full cursor-pointer')}
+                            onClick={() => {
+                              setCurrent(day);
+                              setSpotlight(matchday);
+                            }}
                           >
                             <h2>{day.getDate()}</h2>
+                            {worldCount > 0 && <span className="badge badge-xs">{worldCount} matches</span>}
                             <p>{Constants.IdiomaticTier[matchday.competition.tier.slug]}</p>
                             {!opponent && <p>BYE</p>}
                             {matchday.status === Constants.MatchStatus.COMPLETED && !!opponent && (

@@ -5,11 +5,11 @@
  */
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { addDays, differenceInDays, format } from 'date-fns';
+import { addDays, differenceInDays, format, isSameDay } from 'date-fns';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
-import { calendarAdvance, play } from '@liga/frontend/redux/actions';
+import { play } from '@liga/frontend/redux/actions';
 import { useTranslation } from '@liga/frontend/hooks';
 import { Standings, Image, Historial } from '@liga/frontend/components';
 import {
@@ -235,7 +235,7 @@ export default function () {
     () =>
       state.profile &&
       upcoming.length &&
-      upcoming[0]?.date.toISOString() === state.profile.date.toISOString(),
+      isSameDay(upcoming[0]?.date, state.profile.date),
     [upcoming, state.profile],
   );
 
@@ -474,58 +474,15 @@ export default function () {
         {/** RIGHT COLUMN */}
         <div className="stack-y gap-0!">
           <section className="divide-base-content/10 grid grid-cols-6 divide-x">
-            {!state.working && (
-              <button
-                title={t('main.dashboard.advanceCalendar')}
-                className="day day-btn border-t-0"
-                disabled={!state.profile || state.working || (isMatchday && !isBenched)}
-                onClick={async () => {
-                  if (state.working || !state.profile) {
-                    return;
-                  }
-
-                  if (!state.profile.teamId && !dismissedNoTeamAdvanceWarning) {
-                    const profileData = await api.faceit.profile();
-
-                    if (profileData.lifetime.matchesPlayed < 10) {
-                      await api.app.messageBox(Constants.WindowIdentifier.Main, {
-                        type: 'warning',
-                        message: 'Are you sure you want to advance the calendar?',
-                        detail:
-                          "You have not found a team to compete with yet!\n\nPlay FACEIT to get a team's attention.",
-                        buttons: ['OK'],
-                      });
-            setDismissedNoTeamAdvanceWarning(true);
-            return;
-                    }
-                  }
-
-                  if (isMatchday && isBenched) {
-                    api.calendar.sim().then(() => dispatch(calendarAdvance(1)));
-                    return;
-                  }
-
-                  if (!isMatchday) {
-                    dispatch(calendarAdvance());
-                  }
-                }}
-              >
-                <figure>
-                  <FaForward />
-                </figure>
-              </button>
-            )}
-            {!!state.working && (
-              <button
-                title={t('main.dashboard.stopCalendar')}
-                className="day day-btn btn-error! border-t-0"
-                onClick={api.calendar.stop}
-              >
-                <figure>
-                  <FaStop />
-                </figure>
-              </button>
-            )}
+            <button
+              title="Career progression is locked to real time"
+              className="day day-btn border-t-0 opacity-70"
+              disabled
+            >
+              <figure>
+                <FaStopwatch />
+              </figure>
+            </button>
             {!state.profile &&
               [...Array(5)].map((_, idx) => (
                 <article
@@ -539,9 +496,7 @@ export default function () {
               [...Array(5)].map((_, idx) => {
                 const today = addDays(state.profile.date, idx);
                 const isActive = idx === 0;
-                const entry = upcoming.find(
-                  (match) => match.date.toISOString() === today.toISOString(),
-                );
+                const entry = upcoming.find((match) => isSameDay(match.date, today));
                 const opponent = entry?.competitors?.find(
                   (competitor) => competitor.teamId !== state.profile.teamId,
                 );

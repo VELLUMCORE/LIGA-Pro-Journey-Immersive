@@ -11,7 +11,8 @@ import { ipcMain } from "electron";
 import { glob } from "glob";
 import { Prisma } from "@prisma/client";
 import { Constants, Util } from "@liga/shared";
-import { DatabaseClient, Game, WindowManager } from "@liga/backend/lib";
+import { DatabaseClient, Game, WindowManager, Worldgen } from "@liga/backend/lib";
+import { syncRealtimeWorld } from "@liga/backend/lib/immersive-career";
 
 export default function registerProfileHandlers() {
   ipcMain.handle(
@@ -48,19 +49,21 @@ export default function registerProfileHandlers() {
         include: { player: true },
       });
 
-      // Create the season-start calendar entry
-      await DatabaseClient.prisma.calendar.create({
-        data: {
-          type: Constants.CalendarEntry.SEASON_START,
-          date: profile.date,
-        },
-      });
+      // Real-time career bootstrap: competitions are scheduled against a fixed season
+      // anchor, then the world is immediately caught up to the player's actual clock.
+      await Worldgen.onSeasonStart();
+      const syncedProfile = await syncRealtimeWorld();
 
-      return profile;
+      return syncedProfile || profile;
     }
   );
 
   ipcMain.handle(Constants.IPCRoute.PROFILES_CURRENT, async () => {
+    const synced = await syncRealtimeWorld();
+    if (synced) {
+      return synced;
+    }
+
     return DatabaseClient.prisma.profile.findFirst({
       include: { player: true },
     });

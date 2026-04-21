@@ -88,7 +88,7 @@ async function getFaceitDailyState(prisma: any, profile: any) {
       status: Constants.MatchStatus.COMPLETED,
     },
   });
-  const maxToday = hasPendingUserMatchday ? 2 : 3;
+  const maxToday = 999;
   return {
     inGameDateIso: start.toISOString(),
     hasPendingUserMatchday,
@@ -97,11 +97,8 @@ async function getFaceitDailyState(prisma: any, profile: any) {
   };
 }
 
-async function advanceOneDayFromFaceit(prisma: any, profileId: number) {
-  const profile = await prisma.profile.findFirst({ where: { id: profileId } });
-  if (!profile) return;
-  const settings = Util.loadSettings(profile.settings);
-  await Engine.Runtime.Instance.start(1);
+async function advanceOneDayFromFaceit() {
+  return Promise.resolve();
 }
 
 async function getFaceitLeaderboard(
@@ -706,9 +703,6 @@ export default function registerFaceitHandlers() {
 
       const dailyAfter = await getFaceitDailyState(prisma, profile);
 
-      if (!dailyAfter.hasPendingUserMatchday && dailyAfter.playedToday === 3) {
-        await advanceOneDayFromFaceit(prisma, profile.id);
-      }
 
       return { ok: true, matchId: realMatchId };
     } catch (err) {

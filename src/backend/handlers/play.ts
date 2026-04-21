@@ -9,6 +9,7 @@ import path from 'node:path';
 import log from 'electron-log';
 import { ipcMain } from 'electron';
 import { flatten, merge, sample } from 'lodash';
+import { endOfDay, startOfDay } from 'date-fns';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { saveFaceitResult } from "@liga/backend/lib/save-result";
 import * as XpEconomy from "@liga/backend/lib/xp-economy";
@@ -20,6 +21,7 @@ import {
   WindowManager,
   Worldgen,
 } from '@liga/backend/lib';
+import { isWithinPlayableWindow } from '@liga/backend/lib/immersive-career';
 
 async function withExhibitionRootPrisma<T>(callback: (prisma: PrismaClient) => Promise<T>) {
   const rootSavePath = path.join(DatabaseClient.localBasePath, Util.getSaveFileName(0));
@@ -264,21 +266,61 @@ export default function () {
       }
     },
   );
-  ipcMain.handle(Constants.IPCRoute.PLAY_START, async (_, spectating?: boolean) => {
-    // grab today's match
+  ipcMain.handle(Constants.IPCRoute.PLAY_START, async (_, spectatingOrOptions?: boolean | { spectating?: boolean; matchId?: number }, maybeMatchId?: number) => {
+    const spectating = typeof spectatingOrOptions === 'boolean'
+      ? spectatingOrOptions
+      : Boolean(spectatingOrOptions?.spectating);
+    const requestedMatchId = typeof spectatingOrOptions === 'object'
+      ? Number(spectatingOrOptions?.matchId)
+      : Number(maybeMatchId);
+
     const profile = await DatabaseClient.prisma.profile.findFirst(Eagers.profile);
-    const entry = await DatabaseClient.prisma.calendar.findFirst({
-      where: {
-        date: profile.date,
-        type: Constants.CalendarEntry.MATCHDAY_USER,
-      },
-    });
-    const match = await DatabaseClient.prisma.match.findFirst({
-      where: {
-        id: Number(entry.payload),
-      },
-      include: Eagers.match.include,
-    });
+    const todayStart = startOfDay(profile.date);
+    const todayEnd = endOfDay(profile.date);
+
+    let match = null as any;
+
+    if (Number.isFinite(requestedMatchId) && requestedMatchId > 0) {
+      match = await DatabaseClient.prisma.match.findFirst({
+        where: { id: requestedMatchId },
+        include: Eagers.match.include,
+      });
+    } else {
+      const entry = await DatabaseClient.prisma.calendar.findFirst({
+        where: {
+          date: {
+            gte: todayStart.toISOString(),
+            lte: todayEnd.toISOString(),
+          },
+          type: Constants.CalendarEntry.MATCHDAY_USER,
+          completed: false,
+        },
+        orderBy: [{ date: 'asc' }, { id: 'asc' }],
+      });
+
+      if (!entry) {
+        throw new Error('NO_MATCHDAY_USER_TODAY');
+      }
+
+      match = await DatabaseClient.prisma.match.findFirst({
+        where: {
+          id: Number(entry.payload),
+        },
+        include: Eagers.match.include,
+      });
+    }
+
+    if (!match) {
+      throw new Error('MATCH_NOT_FOUND');
+    }
+
+    if (!spectating && !isWithinPlayableWindow(new Date(match.date), new Date())) {
+      throw new Error('MATCH_NOT_LIVE');
+    }
+
+    if (spectating && !isWithinPlayableWindow(new Date(match.date), new Date())) {
+      throw new Error('MATCH_NOT_LIVE');
+    }
 
     // minimize main window
     const mainWindow = WindowManager.get(Constants.WindowIdentifier.Main);

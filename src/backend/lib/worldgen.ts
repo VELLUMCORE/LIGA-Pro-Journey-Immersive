@@ -18,6 +18,7 @@ import { Constants, Chance, Bot, Eagers, Util, UserOfferSettings, TierSlug, User
 import { computeLifetimeStats } from "./faceitstats";
 import * as LeagueStats from "./leaguestats";
 import * as XpEconomy from "@liga/backend/lib/xp-economy";
+import { getNextSeasonAnchorDate, getSeasonAnchorDate, withCompetitionStartTime, withMatchKickoff } from './immersive-career';
 
 /**
  * Bumps the current season number by one.
@@ -117,7 +118,7 @@ export async function rotateMapPoolForNewSeason() {
 export async function createCompetitions() {
   // grab current profile
   const profile = await DatabaseClient.prisma.profile.findFirst();
-  const today = profile?.date || new Date();
+  const today = withCompetitionStartTime(getSeasonAnchorDate(profile?.date || new Date()));
 
   // loop through autofill entries and create competitions
   const autofill = Autofill.Items
@@ -247,7 +248,7 @@ export async function createCompetitions() {
 
         return DatabaseClient.prisma.calendar.create({
           data: {
-            date: addDays(today, tier.league.startOffsetDays).toISOString(),
+            date: withCompetitionStartTime(addDays(today, tier.league.startOffsetDays)).toISOString(),
             type: Constants.CalendarEntry.COMPETITION_START,
             payload: competition.id.toString(),
           },
@@ -433,7 +434,7 @@ async function createMatchdays(
     resolvedVetoMapName = resolvedVetoMapName || fallbackMapPool[0]?.gameMap.name || fallbackMapName;
   }
 
-  const today = profile?.date || new Date();
+  const today = competitionStartDate ? new Date(competitionStartDate) : profile?.date || new Date();
 
   // grab user seed (teamless players will not match any competitor)
   const userCompetitorId =
@@ -556,6 +557,7 @@ async function createMatchdays(
           Number(Chance.roll(Constants.MatchDayWeights[competition.tier.league.slug])),
           { weekStartsOn: 1 },
         );
+      matchday = withMatchKickoff(matchday, match.id?.m ?? 0);
 
       if (userSeed != null && match.p.includes(userSeed)) {
         matchday = await resolveUserMatchdayConflict(
@@ -3383,7 +3385,7 @@ export async function scheduleNextSeasonStart() {
   const profile = await DatabaseClient.prisma.profile.findFirst();
   return DatabaseClient.prisma.calendar.create({
     data: {
-      date: addYears(profile.date, 1).toISOString(),
+      date: getNextSeasonAnchorDate(profile.date).toISOString(),
       type: Constants.CalendarEntry.SEASON_START,
     },
   });
@@ -5689,7 +5691,7 @@ export async function onCompetitionStart(entry: Calendar) {
     tournament.$base.rounds().map((round) => {
       const randomRoundMap = sample(mapPool)?.gameMap.name || mapPool[0]?.gameMap.name;
       const vetoPlaceholderMap = mapPool[0]?.gameMap.name || randomRoundMap;
-      return createMatchdays(round, tournament, competition, randomRoundMap, vetoPlaceholderMap);
+      return createMatchdays(round, tournament, competition, randomRoundMap, vetoPlaceholderMap, entry.date);
     }),
   );
 

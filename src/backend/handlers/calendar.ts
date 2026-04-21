@@ -6,6 +6,7 @@ import { dialog, ipcMain } from "electron";
 import { add, addDays, differenceInDays, endOfDay, format, getISODay, startOfDay } from "date-fns";
 import { Prisma, Calendar } from "@prisma/client";
 import { DatabaseClient, Engine, WindowManager, Worldgen } from "@liga/backend/lib";
+import { syncRealtimeWorld } from '@liga/backend/lib/immersive-career';
 import { Bot, Eagers, Constants, Util } from "@liga/shared";
 
 /**
@@ -371,39 +372,12 @@ export default function () {
   );
 
   // IPC: start calendar simulation.
-  ipcMain.handle(Constants.IPCRoute.CALENDAR_START, async (_, max?: number) => {
-    const profile = await DatabaseClient.prisma.profile.findFirst();
-    const settings = Util.loadSettings(profile.settings);
-
-    // First-run logic for competitions remains unchanged.
-    if (!(await DatabaseClient.prisma.competition.count())) {
-      Engine.Runtime.Instance.log.debug("First run detected. Advancing 1 day...");
-
-      return Engine.Runtime.Instance.start(1, true);
-    }
-
-    // Disable window actions during calendar advance.
-    WindowManager.get(Constants.WindowIdentifier.Main).on("close", disableClose);
-    WindowManager.disableMenu(Constants.WindowIdentifier.Main);
-
-    let days = max;
-    if (!max) {
-      const from = profile.date;
-      const to = add(from, { [settings.calendar.unit]: settings.calendar.maxIterations });
-      days = differenceInDays(to, from);
-    }
-
-    await Engine.Runtime.Instance.start(days);
-
-    WindowManager.get(Constants.WindowIdentifier.Main).off("close", disableClose);
-    WindowManager.enableMenu(Constants.WindowIdentifier.Main);
-    return Promise.resolve();
+  ipcMain.handle(Constants.IPCRoute.CALENDAR_START, async () => {
+    return syncRealtimeWorld();
   });
 
   // IPC: stop calendar.
-  ipcMain.handle(Constants.IPCRoute.CALENDAR_STOP, () => {
-    Engine.Runtime.Instance.stop();
-  });
+  ipcMain.handle(Constants.IPCRoute.CALENDAR_STOP, () => Promise.resolve());
 
   // IPC: simulate matchday for the user.
   ipcMain.handle(Constants.IPCRoute.CALENDAR_SIM, async () => {
@@ -412,11 +386,18 @@ export default function () {
     // No team → no user matchday allowed.
     if (!profile.teamId) return null;
 
+    const from = startOfDay(profile.date);
+    const to = endOfDay(profile.date);
     const entry = await DatabaseClient.prisma.calendar.findFirst({
       where: {
-        date: profile.date.toISOString(),
+        date: {
+          gte: from.toISOString(),
+          lte: to.toISOString(),
+        },
         type: Constants.CalendarEntry.MATCHDAY_USER,
+        completed: false,
       },
+      orderBy: [{ date: 'asc' }, { id: 'asc' }],
     });
 
     if (!entry) return null;

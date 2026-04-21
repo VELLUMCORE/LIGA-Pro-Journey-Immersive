@@ -345,7 +345,7 @@ export default {
         teamId,
         rosterOverrides,
       ),
-    start: (spectating?: boolean) => ipcRenderer.invoke(Constants.IPCRoute.PLAY_START, spectating),
+    start: (spectating?: boolean, matchId?: number) => ipcRenderer.invoke(Constants.IPCRoute.PLAY_START, spectating, matchId),
   },
   plugins: {
     start: () => ipcRenderer.send(Constants.IPCRoute.PLUGINS_START),
