@@ -42,6 +42,8 @@ const config: ForgeConfig = {
     new MakerSquirrel({
       setupIcon: './src/frontend/assets/icon.ico',
       iconUrl: 'https://raw.githubusercontent.com/playliga/website/main/public/favicon.ico',
+      authors: 'VELLUMCORE',
+      description: 'Heavily edited LIGA Pro Journey fork focused on immersive real-time player career simulation.'
     }),
     new MakerDMG({
       icon: './src/frontend/assets/icon.ico',
