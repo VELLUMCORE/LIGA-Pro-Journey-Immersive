@@ -908,6 +908,7 @@ export const Settings = {
     theme: ThemeType.SYSTEM,
     locale: null as LocaleIdentifier,
     volume: 0.05,
+    dateSkippable: false,
   },
   calendar: {
     calendarDateFormat: CalendarDateFormat.EU,

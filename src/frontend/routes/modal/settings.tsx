@@ -117,7 +117,27 @@ export default function () {
     });
   }, [state.profile, settings.general.dedicatedServerPath]);
 
-  // steam and game path validation
+const onDateSkippableToggle = async (checked: boolean) => {
+  if (checked && !settings.general.dateSkippable) {
+    const response = await api.app.messageBox(Constants.WindowIdentifier.Modal, {
+      type: 'warning',
+      buttons: ['Enable', 'Cancel'],
+      defaultId: 1,
+      cancelId: 1,
+      message: 'This option is NOT recommended.',
+      detail:
+        'This option may detract from the fun and immersion. Are you sure you want to enable this option?',
+    });
+
+    if (response.response !== 0) {
+      return;
+    }
+  }
+
+  onSettingsUpdate('general.dateSkippable', checked);
+};
+
+// steam and game path validation
   const steamPathError = React.useMemo(() => {
     if (!appStatus) {
       return;
@@ -172,6 +192,22 @@ export default function () {
                 </select>
               </article>
             </section>
+<section>
+  <header>
+    <p>Date Skippable</p>
+    <p>Allows manual date skipping instead of strict real-time progression.</p>
+  </header>
+  <article>
+    <input
+      type="checkbox"
+      className="toggle"
+      onChange={(event) => void onDateSkippableToggle(event.target.checked)}
+      checked={Boolean(settings.general.dateSkippable)}
+      value={String(Boolean(settings.general.dateSkippable))}
+    />
+  </article>
+</section>
+
             <section>
               <header>
                 <p>{t('settings.logLevelTitle')}</p>

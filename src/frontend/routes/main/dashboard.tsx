@@ -9,7 +9,7 @@ import { addDays, differenceInDays, format, isSameDay } from 'date-fns';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
-import { play } from '@liga/frontend/redux/actions';
+import { calendarAdvance, play } from '@liga/frontend/redux/actions';
 import { useTranslation } from '@liga/frontend/hooks';
 import { Standings, Image, Historial } from '@liga/frontend/components';
 import {
@@ -121,6 +121,8 @@ export default function () {
   >([]);
 
   const [dismissedNoTeamAdvanceWarning, setDismissedNoTeamAdvanceWarning] = React.useState(false);
+
+  const canSkipDate = React.useMemo(() => Boolean(settings.general.dateSkippable), [settings.general.dateSkippable]);
 
   const toDashboardTeamTierLabel = (tierSlug: Constants.TierSlug): string =>
     tierSlug === Constants.TierSlug.LEAGUE_PRO
@@ -475,13 +477,12 @@ export default function () {
         <div className="stack-y gap-0!">
           <section className="divide-base-content/10 grid grid-cols-6 divide-x">
             <button
-              title="Career progression is locked to real time"
-              className="day day-btn border-t-0 opacity-70"
-              disabled
+              title={canSkipDate ? 'Skip one day' : 'Career progression is locked to real time'}
+              className={cx('day day-btn border-t-0', !canSkipDate && 'opacity-70')}
+              disabled={!canSkipDate || state.working || state.playing}
+              onClick={() => canSkipDate && dispatch(calendarAdvance(1))}
             >
-              <figure>
-                <FaStopwatch />
-              </figure>
+              <figure>{canSkipDate ? <FaForward /> : <FaStopwatch />}</figure>
             </button>
             {!state.profile &&
               [...Array(5)].map((_, idx) => (

@@ -372,7 +372,31 @@ export default function () {
   );
 
   // IPC: start calendar simulation.
-  ipcMain.handle(Constants.IPCRoute.CALENDAR_START, async () => {
+  ipcMain.handle(Constants.IPCRoute.CALENDAR_START, async (_, max?: number) => {
+    const profile = await DatabaseClient.prisma.profile.findFirst();
+
+    if (!profile) {
+      return null;
+    }
+
+    const settings = Util.loadSettings(profile.settings);
+    const iterations = Math.max(0, Math.floor(Number(max) || 0));
+
+    if (iterations > 0 && settings.general.dateSkippable) {
+      const mainWindow = WindowManager.get(Constants.WindowIdentifier.Main, false);
+      mainWindow?.on('close', disableClose);
+
+      try {
+        await Engine.Runtime.Instance.start(iterations);
+      } finally {
+        mainWindow?.off('close', disableClose);
+      }
+
+      return DatabaseClient.prisma.profile.findFirst({
+        include: { player: true, team: true },
+      });
+    }
+
     return syncRealtimeWorld();
   });
 
