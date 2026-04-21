@@ -1,15 +1,15 @@
 {
-  "name": "liga-pro-journey",
-  "productName": "LIGA Pro Journey",
-  "version": "0.1.1-alpha.7",
+  "name": "liga-pro-journey-immersive",
+  "productName": "LIGA Pro Journey Immersive",
+  "version": "0.1.0",
   "description": "Full revamp mod for LIGA Esports Manager",
   "main": ".webpack/main",
-  "author": "Rxpev",
+  "author": "VELLUMCORE",
   "license": "BUSL-1.1",
   "homepage": "https://playliga.gg",
   "repository": {
     "type": "git",
-    "url": "https://github.com/rxpev/LIGA-Pro-Journey.git"
+    "url": "https://github.com/VELLUMCORE/LIGA-Pro-Journey-Immersive.git"
   },
   "bugs": {
     "url": "https://github.com/playliga/prototype/issues"

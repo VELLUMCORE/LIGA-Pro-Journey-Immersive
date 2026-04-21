@@ -55,8 +55,8 @@ const config: ForgeConfig = {
         draft: false,
         prerelease: false,
         repository: {
-          owner: 'rxpev',
-          name: 'LIGA-Pro-Journey',
+          owner: 'VELLUMCORE',
+          name: 'LIGA-Pro-Journey-Immersive',
         },
       },
     },
