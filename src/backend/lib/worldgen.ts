@@ -397,6 +397,7 @@ async function createMatchdays(
   }>,
   mapName?: string,
   vetoMapName?: string,
+  competitionStartDate?: string | Date,
 ) {
   // grab current profile
   const profile = await DatabaseClient.prisma.profile.findFirst({
@@ -3157,7 +3158,7 @@ function isExtensionOffer(params: {
 export async function recordMatchResults() {
   // get today's match results
   const profile = await DatabaseClient.prisma.profile.findFirst();
-  const today = competitionStartDate ? new Date(competitionStartDate) : profile?.date || new Date();
+  const today = profile?.date || new Date();
   const allMatches = await DatabaseClient.prisma.match.findMany({
     where: {
       date: today.toISOString(),
