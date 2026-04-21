@@ -48,19 +48,19 @@ const config: ForgeConfig = {
     }),
   ],
   publishers: [
-    {
-      name: '@electron-forge/publisher-github',
-      config: {
-        authToken: process.env.GH_PUBLISH_API_KEY,
-        draft: false,
-        prerelease: false,
-        repository: {
-          owner: 'VELLUMCORE',
-          name: 'LIGA-Pro-Journey-Immersive',
-        },
+  {
+    name: '@electron-forge/publisher-github',
+    config: {
+      authToken: process.env.GITHUB_TOKEN ?? process.env.GH_PUBLISH_API_KEY,
+      draft: false,
+      prerelease: false,
+      repository: {
+        owner: 'VELLUMCORE',
+        name: 'LIGA-Pro-Journey-Immersive',
       },
     },
-  ],
+  },
+],
   plugins: [
     new AutoUnpackNativesPlugin({}),
     new WebpackPlugin({

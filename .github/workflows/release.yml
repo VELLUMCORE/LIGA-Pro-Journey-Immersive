@@ -6,27 +6,35 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+  FIREBASE_KEY_ID: ${{ secrets.FIREBASE_KEY_ID }}
+  FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+  GH_ISSUES_CLIENT_ID: ${{ secrets.GH_ISSUES_CLIENT_ID }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   build:
     runs-on: windows-2022
 
-    env:
-      GH_PUBLISH_API_KEY: ${{ secrets.GITHUB_TOKEN }}
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.10"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version-file: ".nvmrc"
+          cache: "npm"
 
-      - name: Show versions
+      - name: Show tool versions
+        shell: bash
         run: |
           node --version
+          npm --version
           python --version
 
       - name: Install dependencies
