@@ -1,125 +1,151 @@
-<div align="center">
-  <p>
-    <a href="https://discord.gg/ZaEwHfDD5N"><img src="https://img.shields.io/discord/1296858234853789826?style=for-the-badge&label=Discord&logo=discord&logoColor=white" /></a>
-  </p>
+# LIGA: Pro Journey Immersive
 
-  <h1>LIGA: Pro Journey</h1>
-  <p>Experience the full journey of becoming a professional Counter-Strike player — queue, compete, rank up, earn ELO, and build your legacy.</p>
-</div>
+Experience the full journey of becoming a professional Counter-Strike player — queue, compete, rank up, earn ELO, and build your legacy.
+
+> **Current status:** very unstable, but functional enough to experiment with.
+> This fork is focused on immersion-first career simulation, even when that makes testing and balancing rough around the edges.
 
 ---
 
-# 🎮 Features
+## What is Pro Journey Immersive?
 
-### **Interactive Role Selection**
-Choose your identity:
+**LIGA: Pro Journey Immersive** is a personal fork of **LIGA: Pro Journey** that pushes the game further toward a more immersive, player-centered Counter-Strike career mode.
+
+The original fork already transforms LIGA from a manager-style experience into a player career experience.  
+This fork keeps that direction, then pushes it further with more real-time behavior, less abstract time-skipping, and a stronger “living world” feel.
+
+---
+
+## What's different between Pro Journey and Pro Journey Immersive?
+
+1. **You can no longer freely skip days**  
+   Time progression is designed to feel more real-time instead of being driven entirely by manual date skipping.
+
+2. **The FACEIT daily match limit has been removed**  
+   You can play as many FACEIT matches as you want in a single day.
+
+3. **Competition start dates are fixed**  
+   Major events and tournaments are no longer dynamically anchored to your profile creation date.
+
+4. **Global match spectating is being experimented with**  
+   In theory, you can spectate matches outside your own immediate path, though this feature is still not fully verified.
+
+5. **Competitions now distinguish between online and offline formats**  
+   The system includes this distinction, even if it does not yet fully affect gameplay logic.
+
+6. **Friends' online status now changes in real time**  
+   Presence is no longer refreshed on a simple per-day basis.
+
+---
+
+## Core Features
+
+### Interactive Role Selection
+Choose how your career starts:
+
 - **Rifler**
 - **AWPer**
 - **In-Game Leader**
 
-<img width="637" height="463" alt="image" src="https://github.com/user-attachments/assets/1bba50b0-2464-4743-aa19-8752521bd15d" />
+Your role affects how you play and how teams evaluate you.
 
-The role you choose will impact how you play in-game and how likely teams are to offer you a spot.
+### FACEIT-Inspired Progression
+A full FACEIT-style progression loop:
 
----
+- Queue against players in your ELO range
+- Play matches directly
+- Earn or lose ELO
+- Build your profile and reputation
+- Get noticed by organizations
 
-### **FACEIT-Inspired Progression**
-A full FACEIT-style matchmaking system:
-- Get matched against opponents in your ELO range 
-- Play your matches in-game  
-- Earn ELO   
-- Track win rate, streaks and player stats  
+Your journey from **grinder to pro** starts here.
 
-Play FACEIT to get recognized by Esports Organizations. Your journey from **Level 1 to Pro** happens here!
+### Player-Centric Career Flow
+This fork is built around being the player, not the manager.
 
-<img width="1891" height="721" alt="image" src="https://github.com/user-attachments/assets/1b2b249a-24a9-4072-a9fc-21749a6242b5" />
+That means:
 
----
+- You begin as an individual player
+- You improve through play, not abstract management actions
+- Teams can notice you and send offers
+- Your role, form, and results shape your career path
 
-### **Realistic Database**
-The most realistic database for any Counter-Strike game ever. Compete alongside 321 teams with realistic roles, avatars and stats!
+### More Immersive Competitive Timeline
+The goal is to make the world feel less like a sandbox menu and more like an ongoing season:
 
-<img width="1901" height="844" alt="image" src="https://github.com/user-attachments/assets/58f6a26b-d858-4acf-b6b3-37f799423006" />
+- Less reliance on manual time-skipping
+- Fixed event timing
+- More persistent world activity
+- A stronger sense that events are happening with or without you
 
----
+### Contract and Team Progression
+As your performances improve, better teams may become interested in you.
 
-### **Reworked Tournament Schedule**
-12 individual local ESEA leagues for each region that qualify to ESL Pro League.
+Your results matter, your development matters, and your long-term career path is shaped by what happens on the server.
 
-Alongside that, a RMR and Major system for for every region.
-
-
-<img width="1426" height="502" alt="image" src="https://github.com/user-attachments/assets/68abd024-bb1b-4d59-8d3c-67eff9dd4ebc" />
-
----
-
-### **Contract System**
-The better you play the more likely the team you are playing for is going to want to keep you around. Of course, that applies the other way around too.
-
-**Your performance matters!**
-
-<img width="1590" height="573" alt="image" src="https://github.com/user-attachments/assets/de75c645-2427-41b1-8cf0-4a8193b4ea66" />
+### Advanced Bot Behaviors
+Powered by the BetterBotsPlus ecosystem and the broader Pro Journey foundation, matches aim to feel closer to real Counter-Strike through smarter behavior, better utility use, and more believable round flow.
 
 ---
 
-### **Advanced Bot Behaviors ([BetterBotsPlus](https://github.com/rxpev/BetterBotsPlus))**
-Powered by my custom bot enhancer:
-- Smarter enemy desicions (ECO rounds, bots drop guns for each other and **much** more!) 
-- Realistic utility usage (over 800 grenades on 10 maps)  
-- More challenging aim and movement  
+## Current Focus
 
-**This makes every match feel closer to real Play.**
+This fork is primarily focused on:
 
-*Bots throw advanced utility*
+- stronger immersion
+- real-time-feeling progression
+- more believable event scheduling
+- deeper player-career identity
+- reducing “gamey” abstractions where possible
 
-![ezgif-2f87161e0ac349b4](https://github.com/user-attachments/assets/48c3a4f1-17f4-41c4-bf50-7c5dcf43066b)
-
-*A rifler Bot dropping an AWP to his AWPer*
-
-![ezgif-24035d679ff71b7b](https://github.com/user-attachments/assets/54cec0ed-75a9-4dc7-bafd-07d33521d90f)
+This also means some systems are still rough, incomplete, or only partially tested.
 
 ---
 
-# 🛠️ Development
+## Important Notes
 
-### This Mod has entered the Alpha phase.
+- This project is currently **very unstable**
+- Some immersive systems are still incomplete
+- Some features may exist in partial form before they are fully balanced
+- Expect rough edges, breakage, and temporary placeholder behavior
 
-**Some new features are planned for the future:**
-
-- Adding an 'Agents' tab -> these will help you get contracts from Organizations
-
-Here is a rough plan of what I want to achieve & have already achieved:
-
-- Career model refactor: “Manager” → “Player Career” foundation ✅
-- New save creation flow: create you (name/country/role) & start as teamless ✅
-- FACEIT system: ELO stat + queue → play pugs to get seen ✅
-- Contract & offers system from the player perspective ✅  
-- Team life as a player: squad hub, being benched/kicked, no transfer control ✅
-- Progression & XP gains for everyone (no manual “team training” UI) ✅
-- Role-specific gameplay mechanics (AWPer restrictions, IGL veto, Rifler as default) ✅
-- UI / UX cleanup: Inbox rewrite, Player DB lock-down & refactor, Sponsor backgrounding, remove simulation, adjust tournament formats ✅
-- Polish and balancing pass (offer frequency, ELO curves, XP curves, role value) ❌🔜
+If you are looking for the more established baseline experience, use the original **LIGA: Pro Journey** first.  
+If you want to experiment with a more immersion-driven direction, this fork is for that.
 
 ---
 
-# ❓ Why Does This Fork / Mod Exist?
+## Development
 
-LIGA: Pro Journey exists because of three passions coming together:
+This project is still in an experimental / alpha-style state.
 
-1. A love for creating bots and AI-driven gameplay
+The main goals of this fork are:
 
-I’ve always enjoyed experimenting with bot behavior in games - making them smarter, more reactive, and more realistic.
-BetterBotsPlus (also heavily inspired by manico's BetterBots) started as a personal playground for AI improvements and making them as close to real players as possible, and this fork aims to bring those bots into a full team-based, career-driven environment for others to enjoy.
+- push LIGA further into a **true player-career simulator**
+- make time and competition structure feel more grounded
+- reduce the disconnect between calendar systems and actual play
+- expand the feeling that the world continues to move around the player
 
-2. Challenging myself with a large technical project
+---
 
-I wanted to learn new languages, dive deeper into game systems, and take on the challenge of refactoring and reshaping an entire game.
-LIGA’s open-source nature made it the perfect foundation to tear apart, rebuild, and transform into something new. Big thank you to lemonpole for being supportive and helping with issues I come across!
+## Credits
 
-3. Creating the Player Career Mode Counter-Strike never had
+- **Original LIGA project**
+- **LIGA: Pro Journey** by rxpev
+- **BetterBotsPlus**
+- Everyone who helped shape the player-career foundation this fork builds on
 
-I’ve always enjoyed FIFA’s Player Career - your own journey, progression, contracts, and development.
-LIGA had a Manager Career, but no way to experience the climb from nobody → FACEIT grinder → rising star → contracted pro.
+---
 
-So this fork exists to build exactly that:
-A true Player Career Mode for Counter-Strike, with FACEIT-style matchmaking, personal progression, realistic bot opponents, and a career path shaped around you.
+## Why this fork exists
+
+This fork exists because the player-career direction is the most exciting part of Pro Journey — and I wanted to push it even further.
+
+The goal is not just to play matches and gain stats.  
+The goal is to make the journey feel more real.
+
+That means:
+
+- a more grounded timeline
+- a more believable competitive world
+- a stronger sense of waiting, progression, and presence
+- a version of Counter-Strike career simulation that feels less like skipping through menus and more like actually living through a season
