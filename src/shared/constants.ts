@@ -332,7 +332,7 @@ export enum IPCRoute {
   PROFILES_CREATE = '/profiles/create',
   PROFILES_CURRENT = '/profiles/current',
   PROFILES_TRAIN = '/profiles/train',
-  PROFILES_UPDATE = '/profiles/update', DEBUG_TEAM_OFFER = '/debug/team-offer', DEBUG_FACEIT_RESULT = '/debug/faceit-result', DEBUG_COMPETITION_RESULT = '/debug/competition-result',
+  PROFILES_UPDATE = '/profiles/update',
   SAVES_ALL = '/saves/all',
   SAVES_DELETE = '/saves/delete',
   SHORTLIST_ALL = '/shortlist/all',
@@ -909,7 +909,6 @@ export const Settings = {
     locale: null as LocaleIdentifier,
     volume: 0.05,
     dateSkippable: false,
-    debug: true,
   },
   calendar: {
     calendarDateFormat: CalendarDateFormat.EU,
