@@ -909,7 +909,7 @@ export const Settings = {
     locale: null as LocaleIdentifier,
     volume: 0.05,
     dateSkippable: false,
-    debug: false,
+    debug: true,
   },
   calendar: {
     calendarDateFormat: CalendarDateFormat.EU,

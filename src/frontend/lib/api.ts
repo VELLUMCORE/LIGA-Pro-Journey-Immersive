@@ -347,7 +347,7 @@ export default {
       ),
     start: (spectating?: boolean, matchId?: number) => ipcRenderer.invoke(Constants.IPCRoute.PLAY_START, spectating, matchId),
   },
-  debug: { teamOffer: (teamId: number) => ipcRenderer.invoke(Constants.IPCRoute.DEBUG_TEAM_OFFER, teamId), faceitResult: (outcome: 'W' | 'D' | 'L') => ipcRenderer.invoke(Constants.IPCRoute.DEBUG_FACEIT_RESULT, outcome), competitionResult: (outcome: 'W' | 'D' | 'L') => ipcRenderer.invoke(Constants.IPCRoute.DEBUG_COMPETITION_RESULT, outcome), }, plugins: {
+  debug: { teamOffer: (teamQuery: string) => ipcRenderer.invoke(Constants.IPCRoute.DEBUG_TEAM_OFFER, teamQuery), faceitResult: (outcome: 'W' | 'D' | 'L') => ipcRenderer.invoke(Constants.IPCRoute.DEBUG_FACEIT_RESULT, outcome), competitionResult: (outcome: 'W' | 'D' | 'L') => ipcRenderer.invoke(Constants.IPCRoute.DEBUG_COMPETITION_RESULT, outcome), }, plugins: {
     start: () => ipcRenderer.send(Constants.IPCRoute.PLUGINS_START),
   },
   players: {
