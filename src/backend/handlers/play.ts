@@ -387,7 +387,7 @@ export default function () {
       data: {
         status: matchCompleted ? Constants.MatchStatus.COMPLETED : match.status,
         competitors: {
-          update: match.competitors.map((competitor: { id: number; teamId: number }) => ({
+          update: match.competitors.map((competitor: { id: number; teamId: number; result?: any }) => ({
             where: { id: competitor.id },
             data: {
               score: globalScore[competitor.teamId],
