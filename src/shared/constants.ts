@@ -332,7 +332,7 @@ export enum IPCRoute {
   PROFILES_CREATE = '/profiles/create',
   PROFILES_CURRENT = '/profiles/current',
   PROFILES_TRAIN = '/profiles/train',
-  PROFILES_UPDATE = '/profiles/update',
+  PROFILES_UPDATE = '/profiles/update', DEBUG_TEAM_OFFER = '/debug/team-offer', DEBUG_FACEIT_RESULT = '/debug/faceit-result', DEBUG_COMPETITION_RESULT = '/debug/competition-result',
   SAVES_ALL = '/saves/all',
   SAVES_DELETE = '/saves/delete',
   SHORTLIST_ALL = '/shortlist/all',

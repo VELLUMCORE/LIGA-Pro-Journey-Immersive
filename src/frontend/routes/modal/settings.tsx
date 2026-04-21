@@ -30,7 +30,7 @@ export default function () {
   const [activeTab, setActiveTab] = React.useState(Tab.GENERAL);
   const [settings, setSettings] = React.useState(Util.loadSettings(state.profile.settings));
   const [appStatus, setAppStatus] = React.useState<NodeJS.ErrnoException>();
-  const hasAttemptedDedicatedDetection = React.useRef(false);
+  const hasAttemptedDedicatedDetection = React.useRef(false); const [debugTeamId, setDebugTeamId] = React.useState('');
   const GAME_SLUG = Constants.Game.CSGO;
 
   // load settings
