@@ -3,6 +3,7 @@
   "productName": "LIGA Pro Journey Immersive",
   "version": "0.1.0",
   "description": "Heavily edited LIGA Pro Journey fork focused on immersive real-time player career simulation.",
+  "main": "./.webpack/main",
   "repository": {
     "type": "git",
     "url": "https://github.com/VELLUMCORE/LIGA-Pro-Journey-Immersive.git"
