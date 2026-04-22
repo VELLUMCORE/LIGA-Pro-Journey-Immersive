@@ -28,6 +28,7 @@ function getCompetitionLabel(
   match: Awaited<ReturnType<typeof api.matches.all<typeof Eagers.match>>>[number],
 ) {
   const tier = Util.getCompetitionTierName(match.competition.tier);
+  const league = Util.getCompetitionLeagueName(match.competition.tier.league);
   const suffix =
     match.competition.tier.groupSize === null
       ? ` ${
@@ -36,11 +37,16 @@ function getCompetitionLabel(
             : Util.parseCupRounds(match.round, match.totalRounds)
         }`
       : '';
-  if (match.competition.tier.league.slug === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE) {
-    return `${match.competition.tier.league.name} ${tier}${suffix}`;
+
+  if (!league || tier.includes(league)) {
+    return `${tier}${suffix}`;
   }
 
-  return `${match.competition.federation.name} ${tier}${suffix}`;
+  if (match.competition.tier.league.slug === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE) {
+    return `${league} ${tier}${suffix}`;
+  }
+
+  return `${tier}${suffix}`;
 }
 
 /**
