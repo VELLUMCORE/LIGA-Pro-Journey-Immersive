@@ -69,6 +69,9 @@ const SETTINGS_VALIDATE_FREQUENCY = 5000;
 /** @constant */
 const PROFILE_SYNC_FREQUENCY = 15000;
 
+/** @constant */
+const LATE_SPECTATE_GRACE_MINUTES = 10;
+
 /**
  * Configure routes.
  *
@@ -327,7 +330,7 @@ function Root() {
 
       autoLaunchMatchIdRef.current = match.id;
 
-      Promise.resolve(dispatch(play(match.id, elapsedMinutes >= 5))).catch(() => {
+      Promise.resolve(dispatch(play(match.id, elapsedMinutes >= LATE_SPECTATE_GRACE_MINUTES))).catch(() => {
         if (!cancelled && autoLaunchMatchIdRef.current === match.id) {
           autoLaunchMatchIdRef.current = null;
         }
