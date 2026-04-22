@@ -75,7 +75,6 @@ export default function () {
       return DatabaseClient.prisma.match.update({
         where: { id },
         data: {
-          status: Constants.MatchStatus.PLAYING,
           competition: {
             update: {
               tournament: JSON.stringify(tournament.save()),
@@ -85,8 +84,7 @@ export default function () {
             update: match.games.map((game, gameIdx) => ({
               where: { id: game.id },
               data: {
-                map: maps[gameIdx],
-                status: gameIdx === 0 ? Constants.MatchStatus.PLAYING : game.status,
+                map: maps[gameIdx] || game.map,
                 // ensure competitors have been added
                 // to the current game in the series
                 //
