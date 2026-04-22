@@ -32,6 +32,7 @@ export { default as IPCModsHandler } from './mods';
 export { default as IPCMapPool } from './map-pool';
 export { default as IPCShortlist } from './shortlist';
 export { default as IPCFaceitHandler } from "./faceit";
+export { default as IPCDebugHandler } from './debug';
 
 /**
  * Gets application information such as name and
