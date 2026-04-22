@@ -467,11 +467,19 @@ export default function () {
                   <option disabled value={-1}>
                     {t('main.competitions.select')}
                   </option>
-                  {visibleTiers.map((tier) => (
-                    <option key={tier.id} value={tier.id}>
-                      {tier.league.name} {Constants.IdiomaticTier[tier.slug]}
-                    </option>
-                  ))}
+                  {visibleTiers.map((tier) => {
+                    const leagueLabel = Util.getCompetitionLeagueName(tier.league);
+                    const tierLabel = Util.getCompetitionTierName(tier);
+                    const optionLabel = !leagueLabel || tierLabel.includes(leagueLabel)
+                      ? tierLabel
+                      : `${leagueLabel} · ${tierLabel}`;
+
+                    return (
+                      <option key={tier.id} value={tier.id}>
+                        {optionLabel}
+                      </option>
+                    );
+                  })}
                 </select>
               </article>
             </section>
