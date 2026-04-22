@@ -1228,19 +1228,9 @@ export const LeagueTierSizesByFederation: Record<
  */
 export const LeagueTierDisabledByFederation: Record<FederationSlug, TierSlug[]> = {
   [FederationSlug.ESPORTS_AMERICAS]: [],
-  [FederationSlug.ESPORTS_ASIA]: [
-    TierSlug.LEAGUE_INTERMEDIATE,
-    TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
-    TierSlug.LEAGUE_MAIN,
-    TierSlug.LEAGUE_MAIN_PLAYOFFS,
-  ],
+  [FederationSlug.ESPORTS_ASIA]: [],
   [FederationSlug.ESPORTS_EUROPA]: [],
-  [FederationSlug.ESPORTS_OCE]: [
-    TierSlug.LEAGUE_INTERMEDIATE,
-    TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
-    TierSlug.LEAGUE_MAIN,
-    TierSlug.LEAGUE_MAIN_PLAYOFFS,
-  ],
+  [FederationSlug.ESPORTS_OCE]: [],
   [FederationSlug.ESPORTS_WORLD]: [],
 };
 
