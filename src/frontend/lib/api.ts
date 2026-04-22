@@ -54,7 +54,7 @@ export default {
         parentId,
         options,
       ) as Promise<Electron.MessageBoxReturnValue>,
-    info: () => ipcRenderer.invoke(Constants.IPCRoute.APP_INFO) as Promise<typeof AppInfo>,
+    info: () => ipcRenderer.invoke(Constants.IPCRoute.APP_INFO) as Promise<typeof AppInfo & { isDev?: boolean; isProduction?: boolean }>,
     quit: () => ipcRenderer.invoke(Constants.IPCRoute.APP_QUIT) as Promise<unknown>,
     status: (settings?: typeof Constants.Settings) =>
       ipcRenderer.invoke(Constants.IPCRoute.APP_STATUS, settings),
@@ -107,6 +107,14 @@ export default {
     connect: (id?: string) => ipcRenderer.invoke(Constants.IPCRoute.DATABASE_CONNECT, id),
     disconnect: () => ipcRenderer.invoke(Constants.IPCRoute.DATABASE_DISCONNECT),
     current: () => ipcRenderer.invoke(Constants.IPCRoute.DATABASE_CURRENT) as Promise<number>,
+  },
+  debug: {
+    teamOffer: (teamId: number) =>
+      ipcRenderer.invoke('/debug/team-offer', teamId),
+    faceitResult: (payload: { outcome: 'W' | 'D' | 'L'; style?: 'DEFAULT' | 'MVP' | 'BOTTOM' }) =>
+      ipcRenderer.invoke('/debug/faceit-result', payload),
+    rescheduleMatch: (matchId: number, time: string) =>
+      ipcRenderer.invoke('/debug/match-reschedule', { matchId, time }),
   },
   emails: {
     all: <T = typeof Eagers.email>(query: Prisma.EmailFindManyArgs = Eagers.email) =>
