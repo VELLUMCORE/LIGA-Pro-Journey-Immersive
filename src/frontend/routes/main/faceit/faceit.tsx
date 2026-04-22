@@ -6,6 +6,7 @@ import {faceitRoomSet,faceitRoomClear,faceitQueueSet,faceitQueueClear,faceitQueu
 import { shuffle } from "lodash";
 
 import Scoreboard from "./scoreboard";
+import FaceitDebugTools from "./debug-tools";
 
 import faceitLogo from "../../../assets/faceit/faceit.png";
 import level1 from "../../../assets/faceit/1.png";
@@ -773,6 +774,7 @@ export default function Faceit(): JSX.Element {
             queueTimer={queueTimer}
             activeMatch={activeMatch}
             reopenMatchRoom={() => setShowMatchRoom(true)}
+            onDebugResolved={refreshProfile}
             gameSlug={gameSlug}
 
             daily={daily}
@@ -1889,6 +1891,7 @@ interface NormalFaceitBodyProps {
 
   activeMatch: MatchRoomData | null;
   reopenMatchRoom: () => void;
+  onDebugResolved?: () => Promise<void> | void;
 
   gameSlug: string;
 
@@ -1911,6 +1914,7 @@ function NormalFaceitBody({
   queueTimer,
   activeMatch,
   reopenMatchRoom,
+  onDebugResolved,
   gameSlug,
   daily,
   canQueue,
@@ -2102,11 +2106,6 @@ function NormalFaceitBody({
                     ×
                   </button>
                 )}
-                {daily && (
-                  <div className="mt-3 text-center text-xs opacity-70">
-                    Matches today: {daily.playedToday}/{daily.maxToday}
-                  </div>
-                )}
                 {queueError ? (
                   <div className="mt-2 text-center text-xs text-red-400 px-6">
                     {queueError}
@@ -2116,6 +2115,7 @@ function NormalFaceitBody({
                     {queueBlockMessage}
                   </div>
                 ) : null}
+                <FaceitDebugTools onResolved={onDebugResolved} />
               </>
             )}
           </div>
