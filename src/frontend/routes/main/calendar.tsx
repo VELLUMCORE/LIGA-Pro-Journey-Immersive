@@ -162,8 +162,8 @@ export default function () {
   }, [spotlight, matches, current]);
 
   const selectedDate = spotlight?.date || current;
-  const selectedDateIsFuture = React.useMemo(
-    () => differenceInCalendarDays(selectedDate, today) > 0,
+  const selectedDateDiffersFromToday = React.useMemo(
+    () => differenceInCalendarDays(selectedDate, today) !== 0,
     [selectedDate, today],
   );
   const matchesOnSelectedDay = React.useMemo(
@@ -211,7 +211,7 @@ export default function () {
           <FaArrowCircleRight />
         </button>
         <button className="ml-auto">{format(current, 'MMMM yyyy')}</button>
-        {debugEnabled && selectedDateIsFuture && (
+        {debugEnabled && selectedDateDiffersFromToday && (
           <button type="button" onClick={() => void goToSelectedDay()}>
             Go to this day
           </button>
@@ -230,7 +230,9 @@ export default function () {
                     <p>Click on a date to view match details.</p>
                     {matchesOnSelectedDay.slice(0, 8).map((fixture) => (
                       <div key={`fixture-empty-${fixture.id}`} className="flex items-center justify-between text-xs">
-                        <span>{format(fixture.date, 'p')} · {fixture.competitors.map((c) => c.team?.name || 'TBD').join(' vs ')}</span>
+                        <span>
+                          {format(fixture.date, 'p')} · {fixture.competitors.map((c) => c.team?.name || 'TBD').join(' vs ')} · {Util.getCompetitionTierName(fixture.competition.tier)}
+                        </span>
                         {fixture.status !== Constants.MatchStatus.COMPLETED && isSameDay(fixture.date, today) && (
                           <button className="btn btn-xs" onClick={() => dispatch(play(fixture.id, true))}>Spectate</button>
                         )}
@@ -261,7 +263,7 @@ export default function () {
                     />
                     <header>
                       <h3>{spotlight.competition.tier.league.name}</h3>
-                      <h4>{Constants.IdiomaticTier[spotlight.competition.tier.slug]}</h4>
+                      <h4>{Util.getCompetitionTierName(spotlight.competition.tier)}</h4>
                       <h5>
                         {spotlight.competition.tier.groupSize
                           ? `${t('shared.matchday')} ${spotlight.round}`
@@ -346,7 +348,7 @@ export default function () {
                         <div key={`fixture-${fixture.id}`} className="flex items-center justify-between gap-2 rounded border border-base-content/10 px-2 py-1">
                           <div>
                             <div className="text-sm">{fixture.competitors.map((c) => c.team?.name || 'TBD').join(' vs ')}</div>
-                            <div className="text-xs opacity-70">{format(fixture.date, 'p')} · {mode.mode}</div>
+                            <div className="text-xs opacity-70">{format(fixture.date, 'p')} · {Util.getCompetitionTierName(fixture.competition.tier)} · {mode.mode}</div>
                           </div>
                           {fixture.status !== Constants.MatchStatus.COMPLETED && isSameDay(fixture.date, today) && (
                             <button className="btn btn-xs" onClick={() => dispatch(play(fixture.id, true))}>
@@ -424,7 +426,7 @@ export default function () {
                           >
                             <h2>{day.getDate()}</h2>
                             {worldCount > 0 && <span className="badge badge-xs">{worldCount} matches</span>}
-                            <p>{Constants.IdiomaticTier[matchday.competition.tier.slug]}</p>
+                            <p>{Util.getCompetitionTierName(matchday.competition.tier)}</p>
                             {!opponent && <p>BYE</p>}
                             {matchday.status === Constants.MatchStatus.COMPLETED && !!opponent && (
                               <span
