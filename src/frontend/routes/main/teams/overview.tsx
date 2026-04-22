@@ -40,6 +40,7 @@ export default function () {
   const [transfers, setTransfers] = React.useState<
     Awaited<ReturnType<typeof api.transfers.all<typeof Eagers.transfer>>>
   >([]);
+  const [gettingOffer, setGettingOffer] = React.useState(false);
   const debugEnabled = Boolean(appInfo?.isDev && (settings.general as any).debug);
 
   const openPlayerTransferModal = React.useCallback((playerId: number) => {
@@ -48,6 +49,18 @@ export default function () {
       payload: playerId,
     });
   }, []);
+
+  const handleDebugTeamOffer = React.useCallback(async () => {
+    setGettingOffer(true);
+
+    try {
+      await api.debug.teamOffer(team.id);
+      const nextTransfers = await api.team.transfers(team.id);
+      setTransfers(nextTransfers);
+    } finally {
+      setGettingOffer(false);
+    }
+  }, [team.id]);
 
   // fetch data when team changes
   React.useEffect(() => {
@@ -202,9 +215,10 @@ export default function () {
             <button
               type="button"
               className="btn btn-sm btn-primary"
-              onClick={() => void api.debug.teamOffer(team.id)}
+              disabled={gettingOffer}
+              onClick={() => void handleDebugTeamOffer()}
             >
-              Get offer
+              {gettingOffer ? 'Getting offer...' : 'Get offer'}
             </button>
           </aside>
         )}
