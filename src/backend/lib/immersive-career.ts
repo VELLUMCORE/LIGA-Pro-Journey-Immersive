@@ -9,7 +9,7 @@ import { Constants, Util } from '@liga/shared';
 const MATCH_SLOTS = [13, 16, 19, 22];
 const PLAY_WINDOW_EARLY_MINUTES = 20;
 const MAP_SEGMENT_MINUTES = 60;
-const LATE_SPECTATE_GRACE_MINUTES = 5;
+const LATE_SPECTATE_GRACE_MINUTES = 10;
 const DEFAULT_REALTIME_MAP_WINDOW = 3;
 
 type RealtimeMatchPayload = Awaited<ReturnType<typeof loadRealtimeMatch>>;
