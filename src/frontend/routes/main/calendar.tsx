@@ -19,7 +19,7 @@ import {
 } from 'date-fns';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { AppStateContext } from '@liga/frontend/redux';
-import { profileUpdate } from '@liga/frontend/redux/actions';
+import { play, profileUpdate } from '@liga/frontend/redux/actions';
 import { cx } from '@liga/frontend/lib';
 import { useTranslation } from '@liga/frontend/hooks';
 import { Image } from '@liga/frontend/components';
@@ -232,7 +232,7 @@ export default function () {
                       <div key={`fixture-empty-${fixture.id}`} className="flex items-center justify-between text-xs">
                         <span>{format(fixture.date, 'p')} · {fixture.competitors.map((c) => c.team?.name || 'TBD').join(' vs ')}</span>
                         {fixture.status !== Constants.MatchStatus.COMPLETED && isSameDay(fixture.date, today) && (
-                          <button className="btn btn-xs" onClick={() => api.play.start(true, fixture.id)}>Spectate</button>
+                          <button className="btn btn-xs" onClick={() => dispatch(play(fixture.id, true))}>Spectate</button>
                         )}
                       </div>
                     ))}
@@ -349,7 +349,7 @@ export default function () {
                             <div className="text-xs opacity-70">{format(fixture.date, 'p')} · {mode.mode}</div>
                           </div>
                           {fixture.status !== Constants.MatchStatus.COMPLETED && isSameDay(fixture.date, today) && (
-                            <button className="btn btn-xs" onClick={() => api.play.start(true, fixture.id)}>
+                            <button className="btn btn-xs" onClick={() => dispatch(play(fixture.id, true))}>
                               Spectate
                             </button>
                           )}
