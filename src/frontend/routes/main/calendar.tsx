@@ -58,8 +58,7 @@ export default function () {
   const [appInfo, setAppInfo] = React.useState<{ isDev?: boolean } | null>(null);
   const [debugTimeValue, setDebugTimeValue] = React.useState('12:00');
   const today = React.useMemo(() => state.profile?.date || new Date(), [state.profile]);
-  const settings = React.useMemo(() => Util.loadSettings(state.profile?.settings), [state.profile?.settings]);
-  const debugEnabled = Boolean(appInfo?.isDev && (settings.general as any).debug);
+  const debugEnabled = Boolean(appInfo?.isDev);
 
   // start and end of the month
   const start = React.useMemo(() => startOfMonth(current), [current]);
@@ -231,7 +230,7 @@ export default function () {
                     {matchesOnSelectedDay.slice(0, 8).map((fixture) => (
                       <div key={`fixture-empty-${fixture.id}`} className="flex items-center justify-between text-xs">
                         <span>
-                          {format(fixture.date, 'p')} · {fixture.competitors.map((c) => c.team?.name || 'TBD').join(' vs ')} · {Util.getCompetitionTierName(fixture.competition.tier)}
+                          {format(fixture.date, 'p')} · {fixture.competitors.map((c) => c.team?.name || 'TBD').join(' vs ')} · {Util.getCompetitionLeagueName(fixture.competition.tier.league)} · {Util.getCompetitionTierName(fixture.competition.tier)}
                         </span>
                         {fixture.status !== Constants.MatchStatus.COMPLETED && isSameDay(fixture.date, today) && (
                           <button className="btn btn-xs" onClick={() => dispatch(play(fixture.id, true))}>Spectate</button>
@@ -262,7 +261,7 @@ export default function () {
                       )}
                     />
                     <header>
-                      <h3>{spotlight.competition.tier.league.name}</h3>
+                      <h3>{Util.getCompetitionLeagueName(spotlight.competition.tier.league)}</h3>
                       <h4>{Util.getCompetitionTierName(spotlight.competition.tier)}</h4>
                       <h5>
                         {spotlight.competition.tier.groupSize
@@ -348,7 +347,7 @@ export default function () {
                         <div key={`fixture-${fixture.id}`} className="flex items-center justify-between gap-2 rounded border border-base-content/10 px-2 py-1">
                           <div>
                             <div className="text-sm">{fixture.competitors.map((c) => c.team?.name || 'TBD').join(' vs ')}</div>
-                            <div className="text-xs opacity-70">{format(fixture.date, 'p')} · {Util.getCompetitionTierName(fixture.competition.tier)} · {mode.mode}</div>
+                            <div className="text-xs opacity-70">{format(fixture.date, 'p')} · {Util.getCompetitionLeagueName(fixture.competition.tier.league)} · {Util.getCompetitionTierName(fixture.competition.tier)} · {mode.mode}</div>
                           </div>
                           {fixture.status !== Constants.MatchStatus.COMPLETED && isSameDay(fixture.date, today) && (
                             <button className="btn btn-xs" onClick={() => dispatch(play(fixture.id, true))}>
