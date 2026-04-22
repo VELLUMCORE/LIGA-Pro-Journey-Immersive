@@ -138,7 +138,6 @@ export default function () {
     });
   }, []);
 
-  // load settings
   React.useEffect(() => {
     if (!state.profile) {
       return;
@@ -147,12 +146,10 @@ export default function () {
     setSettings(Util.loadSettings(state.profile.settings));
   }, [state.profile]);
 
-  // reset one-time warning after switching profiles/saves
   React.useEffect(() => {
     setDismissedNoTeamAdvanceWarning(false);
   }, [state.profile?.id]);
 
-  // fetch upcoming list of matches
   React.useEffect(() => {
     if (!state.profile) {
       return;
@@ -166,7 +163,6 @@ export default function () {
     api.matches.upcoming(Eagers.match, NUM_UPCOMING).then(setUpcoming);
   }, [state.profile]);
 
-  // fetch recent transfers
   React.useEffect(() => {
     if (!state.profile) {
       return;
@@ -191,7 +187,6 @@ export default function () {
       .then(setTransfers);
   }, [state.profile]);
 
-  // fetch previous matches if no upcoming matches
   React.useEffect(() => {
     const [nextMatch] = upcoming.slice(0, 1);
 
@@ -211,7 +206,6 @@ export default function () {
   const featuredMatch = React.useMemo(() => spotlight || previous[0], [spotlight, previous]);
   const standings = React.useMemo(() => featuredMatch, [featuredMatch]);
 
-  // fetch match facts for spotlight / latest match result
   React.useEffect(() => {
     if (!featuredMatch) {
       setMatchHistorial([[], []]);
@@ -230,7 +224,6 @@ export default function () {
     ).then(setWorldRankings);
   }, [featuredMatch]);
 
-  // fill in rows if not enough upcoming matches
   const upcomingFiller = React.useMemo(
     () => [...Array(Math.max(0, NUM_UPCOMING - (upcoming.length || 1)))],
     [upcoming],
@@ -266,7 +259,6 @@ export default function () {
     featuredElapsedMinutes != null
     && featuredElapsedMinutes > featuredSeriesWindowMinutes;
 
-  // grab user's team info
   const userTeam = React.useMemo(() => {
     if (!standings || !state.profile?.teamId) {
       return undefined;
@@ -277,7 +269,6 @@ export default function () {
     );
   }, [standings, state.profile?.teamId]);
 
-  // grab competitors by user's group
   const userGroupCompetitors = React.useMemo(() => {
     if (!standings || !standings.competition.tier.groupSize || !userTeam) {
       return undefined;
@@ -290,7 +281,6 @@ export default function () {
 
   return (
     <div className="dashboard">
-      {/** PLAYING MODAL */}
       <dialog className={cx('modal', state.playing && 'modal-open')}>
         <section className="modal-box">
           <h3 className="text-lg">{t('main.dashboard.playingMatchTitle')}</h3>
@@ -298,12 +288,9 @@ export default function () {
         </section>
       </dialog>
 
-      {/** SETTINGS VALIDATION WARNING BANNER */}
       <StatusBanner error={state.appStatus} />
 
-      {/** MAIN CONTENT */}
       <main>
-        {/** LEFT COLUMN */}
         <div className="stack-y gap-0!">
           <section className="stack-y gap-0!">
             <header className="prose border-t-0!">
@@ -322,7 +309,6 @@ export default function () {
                       <td className="w-1/6" title={format(match.date, 'PPPP p')}>
                         <div className="leading-tight">
                           <p>{format(match.date, 'MM/dd')}</p>
-                          <small className="font-semibold opacity-80">{format(match.date, 'HH:mm')}</small>
                         </div>
                       </td>
                       <td className="w-3/6 truncate" title={opponent?.team?.name || '-'}>
@@ -403,13 +389,13 @@ export default function () {
                         competitors={userGroupCompetitors}
                         title={
                           standings.competition.tier.league.slug ===
-                            Constants.LeagueSlug.ESPORTS_LEAGUE
+                          Constants.LeagueSlug.ESPORTS_LEAGUE
                             ? Util.getCompetitionTierName(standings.competition.tier)
                             : `${t('shared.group')} ${Util.toAlpha(userTeam.group)}`
                         }
                         zones={
                           standings.competition.status ===
-                          Constants.CompetitionStatus.STARTED &&
+                            Constants.CompetitionStatus.STARTED &&
                           Util.getTierZonesByGroup(
                             standings.competition.tier.slug as Constants.TierSlug,
                             standings.competition.federation.slug as Constants.FederationSlug,
@@ -497,7 +483,6 @@ export default function () {
           </section>
         </div>
 
-        {/** RIGHT COLUMN */}
         <div className="stack-y gap-0!">
           <section className="divide-base-content/10 grid grid-cols-6 divide-x">
             <button
@@ -571,275 +556,266 @@ export default function () {
           </section>
           <section className="divide-base-content/10 flex divide-x">
             <aside className="w-2/3">{(() => {
-            // placeholder while things are loading
-            // or if there are no matches
-            if (!featuredMatch) {
-              return (
-                <section className="card image-full card-sm h-80 flex-grow rounded-none before:rounded-none! before:opacity-50!">
-                  <figure>
-                    <Image
-                      className="h-full w-full"
-                      src={Util.convertMapPool('de_dust2', Constants.Game.CSGO, true)}
-                    />
-                  </figure>
-                  <article className="card-body items-center justify-center">
-                    {t('main.dashboard.noMatch')}
-                  </article>
-                </section>
-              );
-            }
-
-            const featuredCompetitors = featuredMatch.competitors.filter((competitor) => !!competitor?.team);
-            const [home, away] = featuredCompetitors;
-
-            if (!home || !away) {
-              return (
-                <section className="card image-full card-sm h-80 flex-grow rounded-none before:rounded-none! before:opacity-50!">
-                  <figure>
-                    <Image
-                      className="h-full w-full"
-                      src={Util.convertMapPool('de_dust2', Constants.Game.CSGO, true)}
-                    />
-                  </figure>
-                  <article className="card-body items-center justify-center text-center">
-                    {t('main.dashboard.noMatchScheduled')}
-                  </article>
-                </section>
-              );
-            }
-
-            const featuredGames = featuredMatch.games || [];
-            const activeGame = featuredGames.find(
-              (game) => game.status !== Constants.MatchStatus.COMPLETED,
-            ) || featuredGames[0];
-            const [homeHistorial, awayHistorial] = matchHistorial;
-            const [homeWorldRanking, awayWorldRanking] = worldRankings;
-            const [homeSuffix, awaySuffix] = [home, away].map((competitor) => {
-              if (!featuredMatch.competition.tier.groupSize || !userGroupCompetitors) {
-                return toDashboardTeamTierLabel(Constants.Prestige[competitor.team.tier]);
-              }
-
-              const idx = userGroupCompetitors.findIndex(
-                (entry) => entry.teamId === competitor.teamId,
-              );
-              if (idx === -1) {
-                return toDashboardTeamTierLabel(Constants.Prestige[competitor.team.tier]);
-              }
-
-              return Util.toOrdinalSuffix(idx + 1);
-            });
-            const featuredLeagueLabel = Util.getCompetitionLeagueName(featuredMatch.competition.tier.league);
-            const featuredTierLabel = Util.getCompetitionTierName(featuredMatch.competition.tier);
-            const autoJoinStatusLabel = featuredResultOnly
-              ? 'This series already finished before you arrived.'
-              : featuredShouldSpectate
-                ? `Server auto-connect is spectator-only after ${format(featuredMatch.date, 'HH:mm')}.`
-                : featuredKickoffReached
-                  ? 'Server should auto-connect as soon as the match window opens.'
-                  : `Server will auto-connect at ${format(featuredMatch.date, 'HH:mm')}.`;
-
-            return (
-              <section className="card image-full card-sm h-80 flex-grow rounded-none before:rounded-none!">
-                {featuredMatch.status === Constants.MatchStatus.PLAYING && (
-                  <figure className="center absolute top-2 left-1/2 z-10 -translate-x-1/2 gap-1 uppercase">
-                    <article className="inline-grid *:[grid-area:1/1]">
-                      <span className="status status-error animate-ping" />
-                      <span className="status status-error" />
-                    </article>
-                    <span>
-                      <strong>Live&nbsp;</strong>
-                      <em>
-                        ({featuredMatch.competitors.map((competitor) => competitor.score).join(' - ')}
-                        )
-                      </em>
-                    </span>
-                  </figure>
-                )}
-                <figure>
-                  <Image
-                    className="h-full w-full"
-                    src={
-                      isIgl && isFeaturedMatchday && !featuredKickoffReached
-                        ? 'resources://maps/allmaps.png'
-                        : Util.convertMapPool(
-                            activeGame?.map || 'de_dust2',
-                            settings.general.game,
-                            true,
-                          )
-                    }
-                  />
-                </figure>
-                <article className="card-body">
-                  <header className="grid h-full grid-cols-3 place-items-center">
-                    <aside className="stack-y items-center">
-                      <img src={home.team.blazon} className="h-24 w-auto" />
-                      <span className="badge badge-lg">{Number(home.score ?? 0)}</span>
-                      <Historial matches={homeHistorial} teamId={home.teamId} />
-                      <div className="text-center">
-                        <p>
-                          {home.team.name}&nbsp;
-                          <small title={t('shared.worldRanking')}>
-                            (#{homeWorldRanking || 0})
-                          </small>
-                        </p>
-                        <p>
-                          <small>{homeSuffix}</small>
-                        </p>
-                      </div>
-                    </aside>
-                    <aside className="center h-full gap-4">
+              if (!featuredMatch) {
+                return (
+                  <section className="card image-full card-sm h-80 flex-grow rounded-none before:rounded-none! before:opacity-50!">
+                    <figure>
                       <Image
-                        title={`${featuredLeagueLabel}: ${featuredTierLabel}`}
-                        className="size-24"
-                        src={Util.getCompetitionLogo(
-                          featuredMatch.competition.tier.slug,
-                          featuredMatch.competition.federation.slug,
-                        )}
+                        className="h-full w-full"
+                        src={Util.convertMapPool('de_dust2', Constants.Game.CSGO, true)}
                       />
-                      <p className="text-center">
-                        <em>{format(featuredMatch.date, 'PPPP')}</em>
-                        <br />
-                        <strong>Start {format(featuredMatch.date, 'HH:mm')}</strong>
-                      </p>
-                      <ul>
-                        <li className="stack-x items-center">
-                          <FaMapSigns />
-                          <span>
-                            {Util.convertMapPool(
+                    </figure>
+                    <article className="card-body items-center justify-center">
+                      {t('main.dashboard.noMatch')}
+                    </article>
+                  </section>
+                );
+              }
+
+              const featuredCompetitors = featuredMatch.competitors.filter((competitor) => !!competitor?.team);
+              const [home, away] = featuredCompetitors;
+
+              if (!home || !away) {
+                return (
+                  <section className="card image-full card-sm h-80 flex-grow rounded-none before:rounded-none! before:opacity-50!">
+                    <figure>
+                      <Image
+                        className="h-full w-full"
+                        src={Util.convertMapPool('de_dust2', Constants.Game.CSGO, true)}
+                      />
+                    </figure>
+                    <article className="card-body items-center justify-center text-center">
+                      {t('main.dashboard.noMatchScheduled')}
+                    </article>
+                  </section>
+                );
+              }
+
+              const featuredGames = featuredMatch.games || [];
+              const activeGame = featuredGames.find(
+                (game) => game.status !== Constants.MatchStatus.COMPLETED,
+              ) || featuredGames[0];
+              const [homeHistorial, awayHistorial] = matchHistorial;
+              const [homeWorldRanking, awayWorldRanking] = worldRankings;
+              const [homeSuffix, awaySuffix] = [home, away].map((competitor) => {
+                if (!featuredMatch.competition.tier.groupSize || !userGroupCompetitors) {
+                  return toDashboardTeamTierLabel(Constants.Prestige[competitor.team.tier]);
+                }
+
+                const idx = userGroupCompetitors.findIndex(
+                  (entry) => entry.teamId === competitor.teamId,
+                );
+                if (idx === -1) {
+                  return toDashboardTeamTierLabel(Constants.Prestige[competitor.team.tier]);
+                }
+
+                return Util.toOrdinalSuffix(idx + 1);
+              });
+              const featuredLeagueLabel = Util.getCompetitionLeagueName(featuredMatch.competition.tier.league);
+              const featuredTierLabel = Util.getCompetitionTierName(featuredMatch.competition.tier);
+              const autoJoinStatusLabel = featuredResultOnly
+                ? 'This series already finished before you arrived.'
+                : featuredShouldSpectate
+                  ? `Server auto-connect is spectator-only after ${format(featuredMatch.date, 'HH:mm')}.`
+                  : featuredKickoffReached
+                    ? 'Server should auto-connect as soon as the match window opens.'
+                    : `Server will auto-connect at ${format(featuredMatch.date, 'HH:mm')}.`;
+
+              return (
+                <section className="card image-full card-sm h-80 flex-grow rounded-none before:rounded-none!">
+                  {featuredMatch.status === Constants.MatchStatus.PLAYING && (
+                    <figure className="center absolute top-2 left-1/2 z-10 -translate-x-1/2 gap-1 uppercase">
+                      <article className="inline-grid *:[grid-area:1/1]">
+                        <span className="status status-error animate-ping" />
+                        <span className="status status-error" />
+                      </article>
+                      <span>
+                        <strong>Live&nbsp;</strong>
+                        <em>
+                          ({featuredMatch.competitors.map((competitor) => competitor.score).join(' - ')})
+                        </em>
+                      </span>
+                    </figure>
+                  )}
+                  <figure>
+                    <Image
+                      className="h-full w-full"
+                      src={
+                        isIgl && isFeaturedMatchday && !featuredKickoffReached
+                          ? 'resources://maps/allmaps.png'
+                          : Util.convertMapPool(
                               activeGame?.map || 'de_dust2',
                               settings.general.game,
-                            )}
-                          </span>
-                        </li>
-                        <li className="stack-x items-center">
-                          <FaCalendarDay />
-                          <span>
-                            {featuredMatch.competition.tier.groupSize
-                              ? `${t('shared.matchday')} ${featuredMatch.round}`
-                              : Constants.TierSwissConfig[featuredMatch.competition.tier.slug as Constants.TierSlug]
-                              ? Util.parseSwissRound(featuredMatch.round)
-                              : Util.parseCupRounds(featuredMatch.round, featuredMatch.totalRounds)}
-                          </span>
-                        </li>
-                        <li className="stack-x items-center">
-                          <FaStream />
-                          <span>
-                            {t('shared.bestOf')}&nbsp;
-                            {featuredGames.length || 1}
-                          </span>
-                        </li>
-                        <li className="stack-x items-center">
-                          <FaStopwatch />
-                          <span>Kickoff {format(featuredMatch.date, 'HH:mm')}</span>
-                        </li>
-                      </ul>
-                    </aside>
-                    <aside className="stack-y items-center">
-                      <img src={away.team.blazon} className="h-24 w-auto" />
-                      <span className="badge badge-lg">{Number(away.score ?? 0)}</span>
-                      <Historial matches={awayHistorial} teamId={away.teamId} />
-                      <div className="text-center">
-                        <p>
-                          {away.team.name}&nbsp;
-                          <small title="World Ranking">
-                            (#{awayWorldRanking || 0})
-                          </small>
+                              true,
+                            )
+                      }
+                    />
+                  </figure>
+                  <article className="card-body">
+                    <header className="grid h-full grid-cols-3 place-items-center">
+                      <aside className="stack-y items-center">
+                        <img src={home.team.blazon} className="h-24 w-auto" />
+                        <span className="badge badge-lg">{Number(home.score ?? 0)}</span>
+                        <Historial matches={homeHistorial} teamId={home.teamId} />
+                        <div className="text-center">
+                          <p>
+                            {home.team.name}&nbsp;
+                            <small title={t('shared.worldRanking')}>
+                              (#{homeWorldRanking || 0})
+                            </small>
+                          </p>
+                          <p>
+                            <small>{homeSuffix}</small>
+                          </p>
+                        </div>
+                      </aside>
+                      <aside className="center h-full gap-4">
+                        <Image
+                          title={`${featuredLeagueLabel}: ${featuredTierLabel}`}
+                          className="size-24"
+                          src={Util.getCompetitionLogo(
+                            featuredMatch.competition.tier.slug,
+                            featuredMatch.competition.federation.slug,
+                          )}
+                        />
+                        <p className="text-center">
+                          <em>{format(featuredMatch.date, 'PPPP')}</em>
                         </p>
-                        <p>
-                          <small>{awaySuffix}</small>
-                        </p>
-                      </div>
-                    </aside>
-                  </header>
-                  <footer className="stack-y items-center gap-2 text-center">
-                    <p className="text-sm opacity-85">{autoJoinStatusLabel}</p>
-                  </footer>
-                </article>
-              </section>
-            );
-          })()}</aside>
-          <aside className="w-1/3">
-            <header className="heading prose max-w-none border-t-0!">
-              <h2>Recent Transfers</h2>
-            </header>
-            <table className="table table-fixed">
-              <tbody>
-                {transfers.slice(0, NUM_PREVIOUS).map((transfer) => {
-                  const latestOffer = transfer.offers[0];
-                  const isContractExpiry = transfer.status === Constants.TransferStatus.EXPIRED;
-                  const isFreeAgentTransfer =
-                    transfer.status === Constants.TransferStatus.TEAM_ACCEPTED &&
-                    (latestOffer?.cost || 0) === 0;
-                  const destinationTeam = isContractExpiry ? transfer.from : transfer.to;
-                  const isNoTeam =
-                    isFreeAgentTransfer ||
-                    !destinationTeam ||
-                    destinationTeam.id == null ||
-                    destinationTeam.name?.toLowerCase() === 'no team' ||
-                    destinationTeam.blazon?.includes('noteam.svg');
+                        <ul>
+                          <li className="stack-x items-center">
+                            <FaMapSigns />
+                            <span>
+                              {Util.convertMapPool(
+                                activeGame?.map || 'de_dust2',
+                                settings.general.game,
+                              )}
+                            </span>
+                          </li>
+                          <li className="stack-x items-center">
+                            <FaCalendarDay />
+                            <span>
+                              {featuredMatch.competition.tier.groupSize
+                                ? `${t('shared.matchday')} ${featuredMatch.round}`
+                                : Constants.TierSwissConfig[featuredMatch.competition.tier.slug as Constants.TierSlug]
+                                  ? Util.parseSwissRound(featuredMatch.round)
+                                  : Util.parseCupRounds(featuredMatch.round, featuredMatch.totalRounds)}
+                            </span>
+                          </li>
+                          <li className="stack-x items-center">
+                            <FaStream />
+                            <span>
+                              {t('shared.bestOf')}&nbsp;
+                              {featuredGames.length || 1}
+                            </span>
+                          </li>
+                        </ul>
+                      </aside>
+                      <aside className="stack-y items-center">
+                        <img src={away.team.blazon} className="h-24 w-auto" />
+                        <span className="badge badge-lg">{Number(away.score ?? 0)}</span>
+                        <Historial matches={awayHistorial} teamId={away.teamId} />
+                        <div className="text-center">
+                          <p>
+                            {away.team.name}&nbsp;
+                            <small title="World Ranking">
+                              (#{awayWorldRanking || 0})
+                            </small>
+                          </p>
+                          <p>
+                            <small>{awaySuffix}</small>
+                          </p>
+                        </div>
+                      </aside>
+                    </header>
+                    <footer className="stack-y items-center gap-2 text-center">
+                      <p className="text-sm opacity-85">{autoJoinStatusLabel}</p>
+                    </footer>
+                  </article>
+                </section>
+              );
+            })()}</aside>
+            <aside className="w-1/3">
+              <header className="heading prose max-w-none border-t-0!">
+                <h2>Recent Transfers</h2>
+              </header>
+              <table className="table table-fixed">
+                <tbody>
+                  {transfers.slice(0, NUM_PREVIOUS).map((transfer) => {
+                    const latestOffer = transfer.offers[0];
+                    const isContractExpiry = transfer.status === Constants.TransferStatus.EXPIRED;
+                    const isFreeAgentTransfer =
+                      transfer.status === Constants.TransferStatus.TEAM_ACCEPTED &&
+                      (latestOffer?.cost || 0) === 0;
+                    const destinationTeam = isContractExpiry ? transfer.from : transfer.to;
+                    const isNoTeam =
+                      isFreeAgentTransfer ||
+                      !destinationTeam ||
+                      destinationTeam.id == null ||
+                      destinationTeam.name?.toLowerCase() === 'no team' ||
+                      destinationTeam.blazon?.includes('noteam.svg');
 
-                  return (
-                    <tr key={`${transfer.id}__transfer_recent`}>
-                      <td className="p-0 text-center">
-                        <button
-                          type="button"
-                          className="mr-2 inline-block"
-                          title={`View ${transfer.target.name}`}
-                          onClick={() => openPlayerTransferModal(transfer.target.id)}
-                        >
-                          <img
-                            title={transfer.target.name}
-                            className="inline-block size-12"
-                            src={transfer.target.avatar || 'resources://avatars/empty.png'}
-                          />
-                        </button>
-                        {isNoTeam ? (
-                          <img
-                            title="No Team"
-                            className="inline-block size-12"
-                            src="resources://blazonry/noteam.svg"
-                          />
-                        ) : (
-                          <Link to={`/teams?teamId=${destinationTeam.id}`}>
+                    return (
+                      <tr key={`${transfer.id}__transfer_recent`}>
+                        <td className="p-0 text-center">
+                          <button
+                            type="button"
+                            className="mr-2 inline-block"
+                            title={`View ${transfer.target.name}`}
+                            onClick={() => openPlayerTransferModal(transfer.target.id)}
+                          >
                             <img
-                              title={destinationTeam.name}
+                              title={transfer.target.name}
                               className="inline-block size-12"
-                              src={destinationTeam.blazon}
+                              src={transfer.target.avatar || 'resources://avatars/empty.png'}
                             />
-                          </Link>
-                        )}
-                      </td>
+                          </button>
+                          {isNoTeam ? (
+                            <img
+                              title="No Team"
+                              className="inline-block size-12"
+                              src="resources://blazonry/noteam.svg"
+                            />
+                          ) : (
+                            <Link to={`/teams?teamId=${destinationTeam.id}`}>
+                              <img
+                                title={destinationTeam.name}
+                                className="inline-block size-12"
+                                src={destinationTeam.blazon}
+                              />
+                            </Link>
+                          )}
+                        </td>
+                        <td className="text-center">&rarr;</td>
+                        <td className="p-0 text-center">
+                          {isContractExpiry ? (
+                            <img
+                              title="No Team"
+                              className="inline-block size-12"
+                              src="resources://blazonry/noteam.svg"
+                            />
+                          ) : (
+                            <Link to={`/teams?teamId=${transfer.from.id}`}>
+                              <img
+                                title={transfer.from.name}
+                                className="inline-block size-12"
+                                src={transfer.from.blazon}
+                              />
+                            </Link>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {[...Array(Math.max(0, NUM_PREVIOUS - transfers.length))].map((_, idx) => (
+                    <tr key={`${idx}__filler_transfer_recent`} className="text-muted">
+                      <td className="text-center">-</td>
                       <td className="text-center">&rarr;</td>
-                      <td className="p-0 text-center">
-                        {isContractExpiry ? (
-                          <img
-                            title="No Team"
-                            className="inline-block size-12"
-                            src="resources://blazonry/noteam.svg"
-                          />
-                        ) : (
-                          <Link to={`/teams?teamId=${transfer.from.id}`}>
-                            <img
-                              title={transfer.from.name}
-                              className="inline-block size-12"
-                              src={transfer.from.blazon}
-                            />
-                          </Link>
-                        )}
-                      </td>
+                      <td className="text-center">-</td>
                     </tr>
-                  );
-                })}
-                {[...Array(Math.max(0, NUM_PREVIOUS - transfers.length))].map((_, idx) => (
-                  <tr key={`${idx}__filler_transfer_recent`} className="text-muted">
-                    <td className="text-center">-</td>
-                    <td className="text-center">&rarr;</td>
-                    <td className="text-center">-</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </aside>
+                  ))}
+                </tbody>
+              </table>
+            </aside>
           </section>
           <section className="divide-base-content/10 grid grid-cols-2 divide-x">
             {((!!featuredMatch && featuredMatch.competitors) || [...Array(2)]).map(
@@ -871,13 +847,13 @@ export default function () {
                             const onClick =
                               match._count.events > 0
                                 ? () =>
-                                  api.window.send<ModalRequest>(
-                                    Constants.WindowIdentifier.Modal,
-                                    {
-                                      target: '/postgame',
-                                      payload: match.id,
-                                    },
-                                  )
+                                    api.window.send<ModalRequest>(
+                                      Constants.WindowIdentifier.Modal,
+                                      {
+                                        target: '/postgame',
+                                        payload: match.id,
+                                      },
+                                    )
                                 : null;
                             const competitionTierLabel = Util.getCompetitionTierName(match.competition.tier);
                             const competitionLeagueLabel = Util.getCompetitionLeagueName(match.competition.tier.league);
@@ -936,14 +912,14 @@ export default function () {
                             <td className="w-1/12">
                               {state.profile
                                 ? format(
-                                  addDays(
-                                    !matches.length
-                                      ? state.profile.date
-                                      : matches.slice(-1)[0].date,
-                                    idx - 1,
-                                  ),
-                                  'MM/dd',
-                                )
+                                    addDays(
+                                      !matches.length
+                                        ? state.profile.date
+                                        : matches.slice(-1)[0].date,
+                                      idx - 1,
+                                    ),
+                                    'MM/dd',
+                                  )
                                 : '-'}
                             </td>
                             <td className="w-4/12 text-center">-</td>
