@@ -6,6 +6,7 @@
 import React from 'react';
 import {
   addMonths,
+  differenceInCalendarDays,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -18,6 +19,7 @@ import {
 } from 'date-fns';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { AppStateContext } from '@liga/frontend/redux';
+import { profileUpdate } from '@liga/frontend/redux/actions';
 import { cx } from '@liga/frontend/lib';
 import { useTranslation } from '@liga/frontend/hooks';
 import { Image } from '@liga/frontend/components';
@@ -50,7 +52,7 @@ function getCompetitionMode(match: MatchesResponse[number]) {
 export default function () {
   // grab today's date
   const t = useTranslation('windows');
-  const { state } = React.useContext(AppStateContext);
+  const { state, dispatch } = React.useContext(AppStateContext);
   const [current, setCurrent] = React.useState(state.profile?.date || new Date());
   const [spotlight, setSpotlight] = React.useState<MatchesResponse[number]>();
   const [appInfo, setAppInfo] = React.useState<{ isDev?: boolean } | null>(null);
@@ -160,6 +162,10 @@ export default function () {
   }, [spotlight, matches, current]);
 
   const selectedDate = spotlight?.date || current;
+  const selectedDateIsFuture = React.useMemo(
+    () => differenceInCalendarDays(selectedDate, today) > 0,
+    [selectedDate, today],
+  );
   const matchesOnSelectedDay = React.useMemo(
     () => worldMatches.filter((match) => isSameDay(match.date, selectedDate)),
     [worldMatches, selectedDate],
@@ -177,6 +183,13 @@ export default function () {
     setSpotlight(updated as MatchesResponse[number]);
     setMatches((prev) => prev.map((match) => (match.id === spotlight.id ? (updated as MatchesResponse[number]) : match)));
     setWorldMatches((prev) => prev.map((match) => (match.id === spotlight.id ? (updated as MatchesResponse[number]) : match)));
+  };
+
+  const goToSelectedDay = async () => {
+    await api.ipc.invoke('/debug/go-to-day', selectedDate.toISOString());
+    const profile = await api.profiles.current();
+    dispatch(profileUpdate(profile));
+    setCurrent(new Date(profile.date));
   };
 
   return (
@@ -198,6 +211,11 @@ export default function () {
           <FaArrowCircleRight />
         </button>
         <button className="ml-auto">{format(current, 'MMMM yyyy')}</button>
+        {debugEnabled && selectedDateIsFuture && (
+          <button type="button" onClick={() => void goToSelectedDay()}>
+            Go to this day
+          </button>
+        )}
       </header>
       <main>
         <section>
