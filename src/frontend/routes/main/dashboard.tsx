@@ -9,7 +9,7 @@ import { addDays, differenceInDays, differenceInMinutes, format, isSameDay } fro
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
-import { calendarAdvance, play } from '@liga/frontend/redux/actions';
+import { calendarAdvance } from '@liga/frontend/redux/actions';
 import { useTranslation } from '@liga/frontend/hooks';
 import { Standings, Image, Historial } from '@liga/frontend/components';
 import {
@@ -317,12 +317,13 @@ export default function () {
                     (competitor) => competitor.teamId !== state.profile.teamId,
                   );
                   const competitionTierLabel = Util.getCompetitionTierName(match.competition.tier);
+                  const competitionLeagueLabel = Util.getCompetitionLeagueName(match.competition.tier.league);
                   return (
                     <tr key={`${match.id}__match_upcoming`}>
                       <td className="w-1/6" title={format(match.date, 'PPPP p')}>
                         <div className="leading-tight">
                           <p>{format(match.date, 'MM/dd')}</p>
-                          <small className="opacity-70">{format(match.date, 'HH:mm')}</small>
+                          <small className="font-semibold opacity-80">Start {format(match.date, 'HH:mm')}</small>
                         </div>
                       </td>
                       <td className="w-3/6 truncate" title={opponent?.team?.name || '-'}>
@@ -334,7 +335,7 @@ export default function () {
                       </td>
                       <td
                         className="w-2/6 truncate"
-                        title={`${match.competition.tier.league.name}: ${competitionTierLabel}`}
+                        title={`${competitionLeagueLabel}: ${competitionTierLabel}`}
                       >
                         {competitionTierLabel}
                       </td>
@@ -375,6 +376,9 @@ export default function () {
             {!!standings &&
               !!featuredMatch &&
               (() => {
+                const featuredLeagueLabel = Util.getCompetitionLeagueName(featuredMatch.competition.tier.league);
+                const featuredTierLabel = Util.getCompetitionTierName(featuredMatch.competition.tier);
+
                 if (standings.competition.tier.groupSize && userTeam && userGroupCompetitors) {
                   return (
                     <article className="stack-y divide-base-content/10 !gap-0 divide-y">
@@ -387,8 +391,8 @@ export default function () {
                           )}
                         />
                         <header>
-                          <h3>{featuredMatch.competition.tier.league.name}</h3>
-                          <h4>{Util.getCompetitionTierName(featuredMatch.competition.tier)}</h4>
+                          <h3>{featuredLeagueLabel}</h3>
+                          <h4>{featuredTierLabel}</h4>
                           <h5>
                             {t('shared.matchday')} {featuredMatch.round}
                           </h5>
@@ -443,8 +447,8 @@ export default function () {
                         )}
                       />
                       <header>
-                        <h3>{featuredMatch.competition.tier.league.name}</h3>
-                        <h4>{Util.getCompetitionTierName(featuredMatch.competition.tier)}</h4>
+                        <h3>{featuredLeagueLabel}</h3>
+                        <h4>{featuredTierLabel}</h4>
                         <h5>
                           {featuredMatch.competition.tier.groupSize
                             ? `${t('shared.matchday')} ${featuredMatch.round}`
@@ -632,12 +636,15 @@ export default function () {
               || featuredKickoffReached
               || featuredResultOnly
               || featuredMatch.status === Constants.MatchStatus.COMPLETED;
-            const playDisabled =
-              state.working
-              || isBenched
-              || !isFeaturedMatchday
-              || featuredResultOnly
-              || featuredMatch.status === Constants.MatchStatus.COMPLETED;
+            const featuredLeagueLabel = Util.getCompetitionLeagueName(featuredMatch.competition.tier.league);
+            const featuredTierLabel = Util.getCompetitionTierName(featuredMatch.competition.tier);
+            const autoJoinStatusLabel = featuredResultOnly
+              ? 'This series already finished before you arrived.'
+              : featuredShouldSpectate
+                ? `Server auto-connect is spectator-only after ${format(featuredMatch.date, 'HH:mm')}.`
+                : featuredKickoffReached
+                  ? 'Server should auto-connect as soon as the match window opens.'
+                  : `Server will auto-connect at ${format(featuredMatch.date, 'HH:mm')}.`;
 
             return (
               <section className="card image-full card-sm h-80 flex-grow rounded-none before:rounded-none!">
@@ -690,7 +697,7 @@ export default function () {
                     </aside>
                     <aside className="center h-full gap-4">
                       <Image
-                        title={`${featuredMatch.competition.tier.league.name}: ${Util.getCompetitionTierName(featuredMatch.competition.tier)}`}
+                        title={`${featuredLeagueLabel}: ${featuredTierLabel}`}
                         className="size-24"
                         src={Util.getCompetitionLogo(
                           featuredMatch.competition.tier.slug,
@@ -700,7 +707,7 @@ export default function () {
                       <p className="text-center">
                         <em>{format(featuredMatch.date, 'PPPP')}</em>
                         <br />
-                        <strong>{format(featuredMatch.date, 'p')}</strong>
+                        <strong>Start {format(featuredMatch.date, 'HH:mm')}</strong>
                       </p>
                       <ul>
                         <li className="stack-x items-center">
@@ -731,7 +738,7 @@ export default function () {
                         </li>
                         <li className="stack-x items-center">
                           <FaStopwatch />
-                          <span>{format(featuredMatch.date, 'HH:mm')}</span>
+                          <span>Kickoff {format(featuredMatch.date, 'HH:mm')}</span>
                         </li>
                       </ul>
                     </aside>
@@ -752,10 +759,10 @@ export default function () {
                       </div>
                     </aside>
                   </header>
-                  <footer className="join justify-center">
+                  <footer className="stack-y items-center gap-2 text-center">
                     <button
                       title={t('main.dashboard.matchSetup')}
-                      className="btn join-item"
+                      className="btn"
                       disabled={matchSetupDisabled}
                       onClick={() =>
                         api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
@@ -766,40 +773,7 @@ export default function () {
                     >
                       <FaCog />
                     </button>
-                    <button
-                      className="btn btn-primary join-item btn-wide"
-                      disabled={playDisabled}
-                      onClick={() => {
-                        const hasMapInProgress = featuredGames.some(
-                          (matchGame) => matchGame.status === Constants.MatchStatus.PLAYING,
-                        );
-                        const shouldOpenVeto =
-                          !featuredKickoffReached &&
-                          featuredMatch.status !== Constants.MatchStatus.PLAYING &&
-                          featuredMatch.status !== Constants.MatchStatus.COMPLETED &&
-                          (featuredGames.length > 1 || isIgl);
-
-                        if (featuredKickoffReached) {
-                          return dispatch(play(featuredMatch.id, featuredShouldSpectate));
-                        }
-
-                        // only jump directly into game when a map is already live,
-                        // or when no veto flow is required.
-                        if (!shouldOpenVeto || hasMapInProgress) {
-                          return dispatch(play(featuredMatch.id));
-                        }
-
-                        api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
-                          target:
-                            featuredMatch.status === Constants.MatchStatus.PLAYING
-                              ? '/postgame'
-                              : '/play',
-                          payload: featuredMatch.id,
-                        });
-                      }}
-                    >
-                      {featuredShouldSpectate ? 'Spectate' : t('main.dashboard.play')}
-                    </button>
+                    <p className="text-sm opacity-85">{autoJoinStatusLabel}</p>
                   </footer>
                 </article>
               </section>
@@ -927,6 +901,7 @@ export default function () {
                                   )
                                 : null;
                             const competitionTierLabel = Util.getCompetitionTierName(match.competition.tier);
+                            const competitionLeagueLabel = Util.getCompetitionLeagueName(match.competition.tier.league);
 
                             return (
                               <tr
@@ -970,7 +945,7 @@ export default function () {
                                 </td>
                                 <td
                                   className="w-3/12 truncate"
-                                  title={`${match.competition.tier.league.name}: ${competitionTierLabel}`}
+                                  title={`${competitionLeagueLabel}: ${competitionTierLabel}`}
                                 >
                                   {competitionTierLabel}
                                 </td>
