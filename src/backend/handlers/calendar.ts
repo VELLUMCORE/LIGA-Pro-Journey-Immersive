@@ -7,7 +7,7 @@ import { add, addDays, differenceInDays, endOfDay, format, getISODay, startOfDay
 import { Prisma, Calendar } from "@prisma/client";
 import { DatabaseClient, Engine, WindowManager, Worldgen } from "@liga/backend/lib";
 import { syncRealtimeWorld } from '@liga/backend/lib/immersive-career';
-import { Bot, Eagers, Constants, Util } from "@liga/shared";
+import { Bot, Eagers, Constants, Util, is } from "@liga/shared";
 
 /**
  * Prevents the main window from closing immediately while the calendar advances.
@@ -22,6 +22,46 @@ async function disableClose(event: Electron.Event) {
     buttons: ["Continue", "Cancel"],
   });
   if (data.response === 0) mainWindow.destroy();
+}
+
+async function ensureDeveloperDebugEnabled() {
+  if (!is.dev()) {
+    throw new Error('DEBUG_DEV_ONLY');
+  }
+
+  const profile = await DatabaseClient.prisma.profile.findFirst();
+  const settings = Util.loadSettings(profile?.settings);
+  if (!(settings.general as any).debug) {
+    throw new Error('DEBUG_MODE_DISABLED');
+  }
+}
+
+async function runCalendarAdvance(max?: number, forceSkippable = false) {
+  const profile = await DatabaseClient.prisma.profile.findFirst();
+
+  if (!profile) {
+    return null;
+  }
+
+  const settings = Util.loadSettings(profile.settings);
+  const iterations = Math.max(0, Math.floor(Number(max) || 0));
+
+  if (iterations > 0 && (forceSkippable || settings.general.dateSkippable)) {
+    const mainWindow = WindowManager.get(Constants.WindowIdentifier.Main, false);
+    mainWindow?.on('close', disableClose);
+
+    try {
+      await Engine.Runtime.Instance.start(iterations);
+    } finally {
+      mainWindow?.off('close', disableClose);
+    }
+
+    return DatabaseClient.prisma.profile.findFirst({
+      include: { player: true, team: true },
+    });
+  }
+
+  return syncRealtimeWorld();
 }
 
 /**
@@ -372,32 +412,31 @@ export default function () {
   );
 
   // IPC: start calendar simulation.
-  ipcMain.handle(Constants.IPCRoute.CALENDAR_START, async (_, max?: number) => {
-    const profile = await DatabaseClient.prisma.profile.findFirst();
+  ipcMain.handle(Constants.IPCRoute.CALENDAR_START, async (_, max?: number) =>
+    runCalendarAdvance(max),
+  );
 
+  ipcMain.handle('/debug/go-to-day', async (_, targetDateInput: string) => {
+    await ensureDeveloperDebugEnabled();
+
+    const profile = await DatabaseClient.prisma.profile.findFirst({
+      include: { player: true, team: true },
+    });
     if (!profile) {
       return null;
     }
 
-    const settings = Util.loadSettings(profile.settings);
-    const iterations = Math.max(0, Math.floor(Number(max) || 0));
-
-    if (iterations > 0 && settings.general.dateSkippable) {
-      const mainWindow = WindowManager.get(Constants.WindowIdentifier.Main, false);
-      mainWindow?.on('close', disableClose);
-
-      try {
-        await Engine.Runtime.Instance.start(iterations);
-      } finally {
-        mainWindow?.off('close', disableClose);
-      }
-
-      return DatabaseClient.prisma.profile.findFirst({
-        include: { player: true, team: true },
-      });
+    const targetDate = startOfDay(new Date(targetDateInput));
+    if (!Number.isFinite(targetDate.getTime())) {
+      throw new Error('INVALID_DEBUG_GO_TO_DAY');
     }
 
-    return syncRealtimeWorld();
+    const dayDelta = differenceInDays(targetDate, startOfDay(profile.date));
+    if (dayDelta <= 0) {
+      return profile;
+    }
+
+    return runCalendarAdvance(dayDelta, true);
   });
 
   // IPC: stop calendar.
