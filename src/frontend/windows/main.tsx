@@ -67,6 +67,9 @@ const ROLE_BADGE_CLASSES: Record<string, string> = {
 /** @constant */
 const SETTINGS_VALIDATE_FREQUENCY = 5000;
 
+/** @constant */
+const PROFILE_SYNC_FREQUENCY = 15000;
+
 /**
  * Configure routes.
  *
@@ -196,6 +199,11 @@ function Root() {
   const navigate = useNavigate();
   const location = useLocation();
   const t = useTranslation('components');
+  const playingRef = React.useRef(state.playing);
+
+  React.useEffect(() => {
+    playingRef.current = state.playing;
+  }, [state.playing]);
 
   React.useEffect(() => {
     const onMouseNavigate = (event: MouseEvent) => {
@@ -266,9 +274,17 @@ function Root() {
       () => api.app.status().then((resp) => dispatch(appStatusUpdate(resp))),
       SETTINGS_VALIDATE_FREQUENCY,
     );
+    const profileHeartbeat = setInterval(() => {
+      if (playingRef.current) {
+        return;
+      }
+
+      api.profiles.current().then((profile) => dispatch(profileUpdate(profile)));
+    }, PROFILE_SYNC_FREQUENCY);
     return () => {
       window.removeEventListener('mousedown', onMouseNavigate);
       clearInterval(heartbeat);
+      clearInterval(profileHeartbeat);
     };
   }, []);
 
