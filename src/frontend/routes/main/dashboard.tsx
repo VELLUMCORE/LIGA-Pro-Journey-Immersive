@@ -322,7 +322,7 @@ export default function () {
                       <td className="w-1/6" title={format(match.date, 'PPPP p')}>
                         <div className="leading-tight">
                           <p>{format(match.date, 'MM/dd')}</p>
-                          <small className="font-semibold opacity-80">Start {format(match.date, 'HH:mm')}</small>
+                          <small className="font-semibold opacity-80">{format(match.date, 'HH:mm')}</small>
                         </div>
                       </td>
                       <td className="w-3/6 truncate" title={opponent?.team?.name || '-'}>
