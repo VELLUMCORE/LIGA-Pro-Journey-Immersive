@@ -5,6 +5,7 @@
  */
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { differenceInMinutes, isSameDay } from 'date-fns';
 import Routes from '@liga/frontend/routes';
 import { Toast, Toaster, toast } from 'react-hot-toast';
 import { FaBars, FaCaretDown, FaEnvelopeOpen } from 'react-icons/fa';
@@ -36,8 +37,6 @@ import {
   Link,
 } from 'react-router-dom';
 import '@liga/frontend/assets/styles.css';
-
-
 
 /** @constant */
 const ROLE_LABELS: Record<string, string> = {
@@ -200,6 +199,7 @@ function Root() {
   const location = useLocation();
   const t = useTranslation('components');
   const playingRef = React.useRef(state.playing);
+  const autoLaunchMatchIdRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     playingRef.current = state.playing;
@@ -287,6 +287,57 @@ function Root() {
       clearInterval(profileHeartbeat);
     };
   }, []);
+
+  React.useEffect(() => {
+    autoLaunchMatchIdRef.current = null;
+  }, [state.profile?.id]);
+
+  React.useEffect(() => {
+    if (!state.profile?.teamId || !state.profile?.date || state.playing || state.working) {
+      return;
+    }
+
+    let cancelled = false;
+
+    api.matches.upcoming(Eagers.match, 1).then(([match]) => {
+      if (cancelled) {
+        return;
+      }
+
+      if (!match) {
+        autoLaunchMatchIdRef.current = null;
+        return;
+      }
+
+      const now = new Date(state.profile.date);
+      const kickoff = new Date(match.date);
+      const elapsedMinutes = differenceInMinutes(now, kickoff);
+      const totalWindowMinutes = Math.max(1, match.games.length || 1) * 60;
+
+      if (!isSameDay(kickoff, now) || elapsedMinutes < 0 || elapsedMinutes > totalWindowMinutes) {
+        if (elapsedMinutes < 0 && autoLaunchMatchIdRef.current === match.id) {
+          autoLaunchMatchIdRef.current = null;
+        }
+        return;
+      }
+
+      if (autoLaunchMatchIdRef.current === match.id) {
+        return;
+      }
+
+      autoLaunchMatchIdRef.current = match.id;
+
+      Promise.resolve(dispatch(play(match.id, elapsedMinutes >= 5))).catch(() => {
+        if (!cancelled && autoLaunchMatchIdRef.current === match.id) {
+          autoLaunchMatchIdRef.current = null;
+        }
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dispatch, state.playing, state.profile?.date, state.profile?.teamId, state.working]);
 
   // setup the theme
   useTheme();
