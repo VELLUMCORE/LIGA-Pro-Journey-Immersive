@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { addDays, differenceInDays, format, isSameDay } from 'date-fns';
+import { addDays, differenceInDays, differenceInMinutes, format, isSameDay } from 'date-fns';
 import { Constants, Eagers, Util } from '@liga/shared';
 import { cx } from '@liga/frontend/lib';
 import { AppStateContext } from '@liga/frontend/redux';
@@ -189,27 +189,6 @@ export default function () {
       .then(setTransfers);
   }, [state.profile]);
 
-  // fetch match facts for spotlight
-  React.useEffect(() => {
-    const [nextMatch] = upcoming.slice(0, 1);
-
-    if (!nextMatch) {
-      return;
-    }
-
-    // match historial
-    Promise.all(
-      nextMatch.competitors.map((competitor) =>
-        api.matches.previous(Eagers.match, competitor.teamId),
-      ),
-    ).then(setMatchHistorial);
-
-    // world rankings
-    Promise.all(
-      nextMatch.competitors.map((competitor) => api.team.worldRanking(competitor.teamId)),
-    ).then(setWorldRankings);
-  }, [upcoming]);
-
   // fetch previous matches if no upcoming matches
   React.useEffect(() => {
     const [nextMatch] = upcoming.slice(0, 1);
@@ -226,29 +205,64 @@ export default function () {
     api.matches.previous(Eagers.match, state.profile.teamId).then(setPrevious);
   }, [upcoming, state.profile]);
 
+  const [spotlight] = React.useMemo(() => upcoming.slice(0, 1), [upcoming]);
+  const featuredMatch = React.useMemo(() => spotlight || previous[0], [spotlight, previous]);
+  const standings = React.useMemo(() => featuredMatch, [featuredMatch]);
+
+  // fetch match facts for spotlight / latest match result
+  React.useEffect(() => {
+    if (!featuredMatch) {
+      setMatchHistorial([[], []]);
+      setWorldRankings([]);
+      return;
+    }
+
+    Promise.all(
+      featuredMatch.competitors.map((competitor) =>
+        api.matches.previous(Eagers.match, competitor.teamId),
+      ),
+    ).then(setMatchHistorial);
+
+    Promise.all(
+      featuredMatch.competitors.map((competitor) => api.team.worldRanking(competitor.teamId)),
+    ).then(setWorldRankings);
+  }, [featuredMatch]);
+
   // fill in rows if not enough upcoming matches
   const upcomingFiller = React.useMemo(
     () => [...Array(Math.max(0, NUM_UPCOMING - (upcoming.length || 1)))],
     [upcoming],
   );
 
-  // check if its matchday
-  const isMatchday = React.useMemo(
+  const isFeaturedMatchday = React.useMemo(
     () =>
-      state.profile &&
-      upcoming.length &&
-      isSameDay(upcoming[0]?.date, state.profile.date),
-    [upcoming, state.profile],
+      Boolean(
+        featuredMatch
+        && state.profile
+        && isSameDay(featuredMatch.date, state.profile.date),
+      ),
+    [featuredMatch, state.profile],
   );
 
-  // grab next match info
-  const [spotlight] = React.useMemo(() => upcoming.slice(0, 1), [upcoming]);
+  const featuredElapsedMinutes = React.useMemo(() => {
+    if (!featuredMatch || !state.profile) {
+      return null;
+    }
 
-  // grab standings info
-  const [standings] = React.useMemo(
-    () => (spotlight ? upcoming.slice(0, 1) : previous),
-    [spotlight, previous],
+    return differenceInMinutes(state.profile.date, featuredMatch.date);
+  }, [featuredMatch, state.profile]);
+  const featuredSeriesWindowMinutes = React.useMemo(
+    () => Math.max(1, featuredMatch?.games?.length || 1) * 60,
+    [featuredMatch],
   );
+  const featuredKickoffReached = featuredElapsedMinutes != null && featuredElapsedMinutes >= 0;
+  const featuredShouldSpectate =
+    featuredElapsedMinutes != null
+    && featuredElapsedMinutes >= 5
+    && featuredElapsedMinutes <= featuredSeriesWindowMinutes;
+  const featuredResultOnly =
+    featuredElapsedMinutes != null
+    && featuredElapsedMinutes > featuredSeriesWindowMinutes;
 
   // grab user's team info
   const userTeam = React.useMemo(() => {
@@ -301,8 +315,11 @@ export default function () {
                   );
                   return (
                     <tr key={`${match.id}__match_upcoming`}>
-                      <td className="w-1/6" title={format(match.date, 'PPPP')}>
-                        {format(match.date, 'MM/dd')}
+                      <td className="w-1/6" title={format(match.date, 'PPPP p')}>
+                        <div className="leading-tight">
+                          <p>{format(match.date, 'MM/dd')}</p>
+                          <small className="opacity-70">{format(match.date, 'HH:mm')}</small>
+                        </div>
                       </td>
                       <td className="w-3/6 truncate" title={opponent?.team?.name || '-'}>
                         <img
@@ -352,7 +369,7 @@ export default function () {
               </article>
             )}
             {!!standings &&
-              !!spotlight &&
+              !!featuredMatch &&
               (() => {
                 if (standings.competition.tier.groupSize && userTeam && userGroupCompetitors) {
                   return (
@@ -361,15 +378,15 @@ export default function () {
                         <Image
                           className="size-16"
                           src={Util.getCompetitionLogo(
-                            spotlight.competition.tier.slug,
-                            spotlight.competition.federation.slug,
+                            featuredMatch.competition.tier.slug,
+                            featuredMatch.competition.federation.slug,
                           )}
                         />
                         <header>
-                          <h3>{spotlight.competition.tier.league.name}</h3>
-                          <h4>{Constants.IdiomaticTier[spotlight.competition.tier.slug]}</h4>
+                          <h3>{featuredMatch.competition.tier.league.name}</h3>
+                          <h4>{Constants.IdiomaticTier[featuredMatch.competition.tier.slug]}</h4>
                           <h5>
-                            {t('shared.matchday')} {spotlight.round}
+                            {t('shared.matchday')} {featuredMatch.round}
                           </h5>
                         </header>
                       </aside>
@@ -417,19 +434,19 @@ export default function () {
                       <Image
                         className="size-16"
                         src={Util.getCompetitionLogo(
-                          spotlight.competition.tier.slug,
-                          spotlight.competition.federation.slug,
+                          featuredMatch.competition.tier.slug,
+                          featuredMatch.competition.federation.slug,
                         )}
                       />
                       <header>
-                        <h3>{spotlight.competition.tier.league.name}</h3>
-                        <h4>{Constants.IdiomaticTier[spotlight.competition.tier.slug]}</h4>
+                        <h3>{featuredMatch.competition.tier.league.name}</h3>
+                        <h4>{Constants.IdiomaticTier[featuredMatch.competition.tier.slug]}</h4>
                         <h5>
-                          {spotlight.competition.tier.groupSize
-                            ? `${t('shared.matchday')} ${spotlight.round}`
-                            : Constants.TierSwissConfig[spotlight.competition.tier.slug as Constants.TierSlug]
-                              ? Util.parseSwissRound(spotlight.round)
-                              : Util.parseCupRounds(spotlight.round, spotlight.totalRounds)}
+                          {featuredMatch.competition.tier.groupSize
+                            ? `${t('shared.matchday')} ${featuredMatch.round}`
+                            : Constants.TierSwissConfig[featuredMatch.competition.tier.slug as Constants.TierSlug]
+                              ? Util.parseSwissRound(featuredMatch.round)
+                              : Util.parseCupRounds(featuredMatch.round, featuredMatch.totalRounds)}
                         </h5>
                       </header>
                     </aside>
@@ -549,7 +566,7 @@ export default function () {
             <aside className="w-2/3">{(() => {
             // placeholder while things are loading
             // or if there are no matches
-            if (!spotlight) {
+            if (!featuredMatch) {
               return (
                 <section className="card image-full card-sm h-80 flex-grow rounded-none before:rounded-none! before:opacity-50!">
                   <figure>
@@ -565,11 +582,8 @@ export default function () {
               );
             }
 
-            // the suffix is either the current position
-            // or their league tier if it's a cup
-            const disabled = state.working || !isMatchday || isBenched;
-            const spotlightCompetitors = spotlight.competitors.filter((competitor) => !!competitor?.team);
-            const [home, away] = spotlightCompetitors;
+            const featuredCompetitors = featuredMatch.competitors.filter((competitor) => !!competitor?.team);
+            const [home, away] = featuredCompetitors;
 
             if (!home || !away) {
               return (
@@ -587,16 +601,19 @@ export default function () {
               );
             }
 
-            const spotlightGames = spotlight.games || [];
+            const featuredGames = featuredMatch.games || [];
+            const activeGame = featuredGames.find(
+              (game) => game.status !== Constants.MatchStatus.COMPLETED,
+            ) || featuredGames[0];
             const [homeHistorial, awayHistorial] = matchHistorial;
             const [homeWorldRanking, awayWorldRanking] = worldRankings;
             const [homeSuffix, awaySuffix] = [home, away].map((competitor) => {
-              if (!spotlight.competition.tier.groupSize || !userGroupCompetitors) {
+              if (!featuredMatch.competition.tier.groupSize || !userGroupCompetitors) {
                 return toDashboardTeamTierLabel(Constants.Prestige[competitor.team.tier]);
               }
 
               const idx = userGroupCompetitors.findIndex(
-                (a) => a.teamId === competitor.teamId,
+                (entry) => entry.teamId === competitor.teamId,
               );
               if (idx === -1) {
                 return toDashboardTeamTierLabel(Constants.Prestige[competitor.team.tier]);
@@ -604,10 +621,23 @@ export default function () {
 
               return Util.toOrdinalSuffix(idx + 1);
             });
+            const matchSetupDisabled =
+              state.working
+              || isBenched
+              || !isFeaturedMatchday
+              || featuredKickoffReached
+              || featuredResultOnly
+              || featuredMatch.status === Constants.MatchStatus.COMPLETED;
+            const playDisabled =
+              state.working
+              || isBenched
+              || !isFeaturedMatchday
+              || featuredResultOnly
+              || featuredMatch.status === Constants.MatchStatus.COMPLETED;
 
             return (
               <section className="card image-full card-sm h-80 flex-grow rounded-none before:rounded-none!">
-                {spotlight.status === Constants.MatchStatus.PLAYING && (
+                {featuredMatch.status === Constants.MatchStatus.PLAYING && (
                   <figure className="center absolute top-2 left-1/2 z-10 -translate-x-1/2 gap-1 uppercase">
                     <article className="inline-grid *:[grid-area:1/1]">
                       <span className="status status-error animate-ping" />
@@ -616,7 +646,7 @@ export default function () {
                     <span>
                       <strong>Live&nbsp;</strong>
                       <em>
-                        ({spotlight.competitors.map((competitor) => competitor.score).join(' - ')}
+                        ({featuredMatch.competitors.map((competitor) => competitor.score).join(' - ')}
                         )
                       </em>
                     </span>
@@ -626,10 +656,10 @@ export default function () {
                   <Image
                     className="h-full w-full"
                     src={
-                      isIgl && isMatchday
+                      isIgl && isFeaturedMatchday && !featuredKickoffReached
                         ? 'resources://maps/allmaps.png'
                         : Util.convertMapPool(
-                            spotlightGames[0]?.map || 'de_dust2',
+                            activeGame?.map || 'de_dust2',
                             settings.general.game,
                             true,
                           )
@@ -640,6 +670,7 @@ export default function () {
                   <header className="grid h-full grid-cols-3 place-items-center">
                     <aside className="stack-y items-center">
                       <img src={home.team.blazon} className="h-24 w-auto" />
+                      <span className="badge badge-lg">{Number(home.score ?? 0)}</span>
                       <Historial matches={homeHistorial} teamId={home.teamId} />
                       <div className="text-center">
                         <p>
@@ -655,22 +686,24 @@ export default function () {
                     </aside>
                     <aside className="center h-full gap-4">
                       <Image
-                        title={`${spotlight.competition.tier.league.name}: ${Constants.IdiomaticTier[spotlight.competition.tier.slug]}`}
+                        title={`${featuredMatch.competition.tier.league.name}: ${Constants.IdiomaticTier[featuredMatch.competition.tier.slug]}`}
                         className="size-24"
                         src={Util.getCompetitionLogo(
-                          spotlight.competition.tier.slug,
-                          spotlight.competition.federation.slug,
+                          featuredMatch.competition.tier.slug,
+                          featuredMatch.competition.federation.slug,
                         )}
                       />
-                      <p>
-                        <em>{format(spotlight.date, 'PPPP')}</em>
+                      <p className="text-center">
+                        <em>{format(featuredMatch.date, 'PPPP')}</em>
+                        <br />
+                        <strong>{format(featuredMatch.date, 'p')}</strong>
                       </p>
                       <ul>
                         <li className="stack-x items-center">
                           <FaMapSigns />
                           <span>
                             {Util.convertMapPool(
-                              spotlightGames[0]?.map || 'de_dust2',
+                              activeGame?.map || 'de_dust2',
                               settings.general.game,
                             )}
                           </span>
@@ -678,24 +711,29 @@ export default function () {
                         <li className="stack-x items-center">
                           <FaCalendarDay />
                           <span>
-                            {spotlight.competition.tier.groupSize
-                              ? `${t('shared.matchday')} ${spotlight.round}`
-                              : Constants.TierSwissConfig[spotlight.competition.tier.slug as Constants.TierSlug]
-                              ? Util.parseSwissRound(spotlight.round)
-                              : Util.parseCupRounds(spotlight.round, spotlight.totalRounds)}
+                            {featuredMatch.competition.tier.groupSize
+                              ? `${t('shared.matchday')} ${featuredMatch.round}`
+                              : Constants.TierSwissConfig[featuredMatch.competition.tier.slug as Constants.TierSlug]
+                              ? Util.parseSwissRound(featuredMatch.round)
+                              : Util.parseCupRounds(featuredMatch.round, featuredMatch.totalRounds)}
                           </span>
                         </li>
                         <li className="stack-x items-center">
                           <FaStream />
                           <span>
                             {t('shared.bestOf')}&nbsp;
-                            {spotlightGames.length || 1}
+                            {featuredGames.length || 1}
                           </span>
+                        </li>
+                        <li className="stack-x items-center">
+                          <FaStopwatch />
+                          <span>{format(featuredMatch.date, 'HH:mm')}</span>
                         </li>
                       </ul>
                     </aside>
                     <aside className="stack-y items-center">
                       <img src={away.team.blazon} className="h-24 w-auto" />
+                      <span className="badge badge-lg">{Number(away.score ?? 0)}</span>
                       <Historial matches={awayHistorial} teamId={away.teamId} />
                       <div className="text-center">
                         <p>
@@ -714,11 +752,11 @@ export default function () {
                     <button
                       title={t('main.dashboard.matchSetup')}
                       className="btn join-item"
-                      disabled={disabled}
+                      disabled={matchSetupDisabled}
                       onClick={() =>
                         api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
                           target: '/pregame',
-                          payload: spotlight.id,
+                          payload: featuredMatch.id,
                         })
                       }
                     >
@@ -726,32 +764,37 @@ export default function () {
                     </button>
                     <button
                       className="btn btn-primary join-item btn-wide"
-                      disabled={disabled}
+                      disabled={playDisabled}
                       onClick={() => {
-                        const hasMapInProgress = spotlightGames.some(
+                        const hasMapInProgress = featuredGames.some(
                           (matchGame) => matchGame.status === Constants.MatchStatus.PLAYING,
                         );
                         const shouldOpenVeto =
-                          spotlight.status !== Constants.MatchStatus.PLAYING &&
-                          spotlight.status !== Constants.MatchStatus.COMPLETED &&
-                          (spotlightGames.length > 1 || isIgl);
+                          !featuredKickoffReached &&
+                          featuredMatch.status !== Constants.MatchStatus.PLAYING &&
+                          featuredMatch.status !== Constants.MatchStatus.COMPLETED &&
+                          (featuredGames.length > 1 || isIgl);
+
+                        if (featuredKickoffReached) {
+                          return dispatch(play(featuredMatch.id, featuredShouldSpectate));
+                        }
 
                         // only jump directly into game when a map is already live,
                         // or when no veto flow is required.
                         if (!shouldOpenVeto || hasMapInProgress) {
-                          return dispatch(play(spotlight.id));
+                          return dispatch(play(featuredMatch.id));
                         }
 
                         api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
                           target:
-                            spotlight.status === Constants.MatchStatus.PLAYING
+                            featuredMatch.status === Constants.MatchStatus.PLAYING
                               ? '/postgame'
                               : '/play',
-                          payload: spotlight.id,
+                          payload: featuredMatch.id,
                         });
                       }}
                     >
-                      {t('main.dashboard.play')}
+                      {featuredShouldSpectate ? 'Spectate' : t('main.dashboard.play')}
                     </button>
                   </footer>
                 </article>
@@ -842,7 +885,7 @@ export default function () {
           </aside>
           </section>
           <section className="divide-base-content/10 grid grid-cols-2 divide-x">
-            {((!!spotlight && spotlight.competitors) || [...Array(2)]).map(
+            {((!!featuredMatch && featuredMatch.competitors) || [...Array(2)]).map(
               (competitor, competitorIdx) => {
                 const teamId = competitor?.teamId;
                 const matches = competitor ? (matchHistorial[competitorIdx] || []) : [];
