@@ -20,9 +20,9 @@ type LeagueSeedData = Prisma.LeagueCreateInput & {
  */
 const data: Array<LeagueSeedData> = [
   {
-    name: 'ESEA',
+    name: 'ESL Challenger League',
     slug: Constants.LeagueSlug.ESPORTS_LEAGUE,
-    startOffsetDays: 60,
+    startOffsetDays: 28,
     federations: [
       Constants.FederationSlug.ESPORTS_AMERICAS,
       Constants.FederationSlug.ESPORTS_ASIA,
@@ -87,7 +87,7 @@ const data: Array<LeagueSeedData> = [
   {
     name: 'ESL Pro League',
     slug: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-    startOffsetDays: 280,
+    startOffsetDays: 180,
     federations: [Constants.FederationSlug.ESPORTS_WORLD],
     tiers: [
       {
@@ -106,9 +106,9 @@ const data: Array<LeagueSeedData> = [
     ],
   },
   {
-    name: '',
+    name: 'Perfect World Major',
     slug: Constants.LeagueSlug.ESPORTS_MAJOR,
-    startOffsetDays: 14,
+    startOffsetDays: 7,
     federations: [
       Constants.FederationSlug.ESPORTS_AMERICAS,
       Constants.FederationSlug.ESPORTS_ASIA,
