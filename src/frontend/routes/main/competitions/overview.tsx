@@ -119,10 +119,25 @@ export default function () {
     [competition],
   );
 
+  const competitionLeagueLabel = React.useMemo(
+    () => Util.getCompetitionLeagueName(competition.tier.league),
+    [competition],
+  );
   const competitionTierLabel = React.useMemo(
     () => Util.getCompetitionTierName(competition.tier),
     [competition],
   );
+  const competitionNameLabel = React.useMemo(() => {
+    if (!competitionLeagueLabel) {
+      return `${competitionTierLabel} · ${competition.federation.name}`;
+    }
+
+    if (competitionTierLabel.includes(competitionLeagueLabel)) {
+      return `${competitionTierLabel} · ${competition.federation.name}`;
+    }
+
+    return `${competitionLeagueLabel} · ${competitionTierLabel} · ${competition.federation.name}`;
+  }, [competition, competitionLeagueLabel, competitionTierLabel]);
   const isSwiss = Boolean(
     Constants.TierSwissConfig[competition.tier.slug as Constants.TierSlug],
   );
@@ -149,9 +164,7 @@ export default function () {
             </thead>
             <tbody>
               <tr>
-                <td colSpan={2}>
-                  {`${competition.tier.league.name} · ${competitionTierLabel} · ${competition.federation.name}`}
-                </td>
+                <td colSpan={2}>{competitionNameLabel}</td>
               </tr>
             </tbody>
             <thead>
