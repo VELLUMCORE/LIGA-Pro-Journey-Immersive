@@ -137,6 +137,15 @@ export default function () {
     [squad],
   );
 
+  const competitionLeagueLabel = React.useMemo(
+    () => (competition ? Util.getCompetitionLeagueName(competition.tier.league) : ''),
+    [competition],
+  );
+  const competitionTierLabel = React.useMemo(
+    () => (competition ? Util.getCompetitionTierName(competition.tier) : ''),
+    [competition],
+  );
+
   if (!competition) {
     return (
       <section className="center h-full">
@@ -191,7 +200,7 @@ export default function () {
                   {!!group.length && !isProLeagueStage && (
                     <span>{Util.toOrdinalSuffix(userTeam?.position)} in&nbsp;</span>
                   )}
-                  {getTeamsTierLabel(competition.tier.slug, competition.tier.league.name, competition.tier.name)}
+                  {getTeamsTierLabel(competition.tier.slug, competitionLeagueLabel, competitionTierLabel)}
                 </td>
               </tr>
             </tbody>
@@ -280,12 +289,13 @@ export default function () {
 
                   const tierLabel = getTeamsTierLabel(
                     match.competition.tier.slug,
-                    match.competition.tier.league?.name,
-                    match.competition.tier.name,
+                    Util.getCompetitionLeagueName(match.competition.tier.league),
+                    Util.getCompetitionTierName(match.competition.tier),
                   );
-                  const competitionLabel = tierLabel === match.competition.tier.league.name
+                  const leagueLabel = Util.getCompetitionLeagueName(match.competition.tier.league);
+                  const competitionLabel = tierLabel === leagueLabel
                     ? tierLabel
-                    : `${match.competition.tier.league.name}: ${tierLabel}`;
+                    : `${leagueLabel}: ${tierLabel}`;
 
                   return (
                     <tr
@@ -441,7 +451,7 @@ export default function () {
           )}
           value={
             group.length
-              ? getTeamsTierLabel(competition.tier.slug, competition.tier.league?.name, competition.tier.name)
+              ? getTeamsTierLabel(competition.tier.slug, competitionLeagueLabel, competitionTierLabel)
               : -1
           }
         >
@@ -453,9 +463,9 @@ export default function () {
           {!!group.length && (
             <option
               disabled
-              value={getTeamsTierLabel(competition.tier.slug, competition.tier.league?.name, competition.tier.name)}
+              value={getTeamsTierLabel(competition.tier.slug, competitionLeagueLabel, competitionTierLabel)}
             >
-              {getTeamsTierLabel(competition.tier.slug, competition.tier.league?.name, competition.tier.name)}
+              {getTeamsTierLabel(competition.tier.slug, competitionLeagueLabel, competitionTierLabel)}
             </option>
           )}
         </select>
