@@ -43,6 +43,8 @@ function getApplicationInfo() {
   return {
     name: is.production() ? app.getName() : AppInfo.productName,
     version: is.production() ? app.getVersion() : AppInfo.version,
+    isDev: is.dev(),
+    isProduction: is.production(),
   };
 }
 
