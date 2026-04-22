@@ -33,14 +33,6 @@ const REGIONAL_LEAGUE_TIERS = new Set<string>([
   Constants.TierSlug.LEAGUE_ADVANCED,
 ]);
 
-const REGIONAL_LEAGUE_ALL_TIERS = new Set<string>([
-  ...REGIONAL_LEAGUE_TIERS,
-  Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-  Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
-  Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
-  Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-]);
-
 const REGIONAL_PLAYOFF_TIER_BY_TIER: Partial<Record<string, string>> = {
   [Constants.TierSlug.LEAGUE_OPEN]: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
   [Constants.TierSlug.LEAGUE_INTERMEDIATE]: Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
@@ -50,18 +42,12 @@ const REGIONAL_PLAYOFF_TIER_BY_TIER: Partial<Record<string, string>> = {
 
 const CUSTOM_INVITATIONAL_TIERS = new Set<string>(Object.values(InvitationalTierSlug));
 
-/**
- * Autofill syntax action types.
- *
- * @enum
- */
 export enum Action {
   EXCLUDE = 'exclude',
   FALLBACK = 'fallback',
   INCLUDE = 'include',
 }
 
-/** @interface */
 export interface Entry {
   action: Action;
   from: string;
@@ -74,7 +60,6 @@ export interface Entry {
   excludeCountryCodes?: Array<string>;
 }
 
-/** @interface */
 export interface Item {
   tierSlug: string;
   on: Constants.CalendarEntry;
@@ -114,7 +99,6 @@ const worldEntry = (
   ...(end ? { end } : {}),
 });
 
-/** @constant */
 export const Items: Array<Item> = [
   {
     tierSlug: Constants.TierSlug.LEAGUE_OPEN,
@@ -552,7 +536,17 @@ export const Items: Array<Item> = [
   {
     tierSlug: Constants.TierSlug.MAJOR_LEGENDS_STAGE,
     on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [worldEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_CHALLENGERS_STAGE, 1, 8)],
+    entries: [
+      {
+        action: Action.INCLUDE,
+        from: Constants.LeagueSlug.ESPORTS_MAJOR,
+        target: Constants.TierSlug.MAJOR_CHALLENGERS_STAGE,
+        federationSlug: Constants.FederationSlug.ESPORTS_WORLD,
+        start: 1,
+        end: 8,
+        season: 0,
+      },
+    ],
   },
   {
     tierSlug: Constants.TierSlug.MAJOR_CHAMPIONS_STAGE,
@@ -562,7 +556,17 @@ export const Items: Array<Item> = [
   {
     tierSlug: Constants.TierSlug.MAJOR_CHAMPIONS_STAGE,
     on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [worldEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_LEGENDS_STAGE, 1, 8)],
+    entries: [
+      {
+        action: Action.INCLUDE,
+        from: Constants.LeagueSlug.ESPORTS_MAJOR,
+        target: Constants.TierSlug.MAJOR_LEGENDS_STAGE,
+        federationSlug: Constants.FederationSlug.ESPORTS_WORLD,
+        start: 1,
+        end: 8,
+        season: 0,
+      },
+    ],
   },
 ];
 
@@ -952,14 +956,6 @@ async function handleFallbackAction(
   return teams;
 }
 
-/**
- * Parses the autofill syntax logic.
- *
- * @param item        The autofill item.
- * @param tier        Tier database record.
- * @param federation  Federation database record.
- * @function
- */
 export async function parse(
   item: Item,
   tier: Prisma.TierGetPayload<typeof Eagers.tier>,
