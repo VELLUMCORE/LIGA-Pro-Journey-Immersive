@@ -51,6 +51,10 @@ export default function () {
     [competition.competitors],
   );
 
+  const competitionTierLabel = React.useMemo(
+    () => Util.getCompetitionTierName(competition.tier),
+    [competition],
+  );
   const isSwiss = Boolean(
     Constants.TierSwissConfig[competition.tier.slug as Constants.TierSlug],
   );
@@ -82,7 +86,7 @@ export default function () {
             teamLink={(team) => `/teams?teamId=${team.id}`}
             title={
               competition.tier.league.slug === Constants.LeagueSlug.ESPORTS_LEAGUE
-                ? Constants.IdiomaticTier[competition.tier.slug]
+                ? competitionTierLabel
                 : `${t('shared.group')} ${Util.toAlpha(group)}`
             }
             zones={
@@ -107,7 +111,7 @@ export default function () {
           competitors={competition.competitors}
           mode="swiss"
           teamLink={(team) => `/teams?teamId=${team.id}`}
-          title={Constants.IdiomaticTier[competition.tier.slug]}
+          title={competitionTierLabel}
         />
       </section>
     );
