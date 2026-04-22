@@ -16,7 +16,6 @@ import {
   FaCalendarDay,
   FaChartBar,
   FaCloudMoon,
-  FaCog,
   FaExclamationTriangle,
   FaForward,
   FaMapSigns,
@@ -629,13 +628,6 @@ export default function () {
 
               return Util.toOrdinalSuffix(idx + 1);
             });
-            const matchSetupDisabled =
-              state.working
-              || isBenched
-              || !isFeaturedMatchday
-              || featuredKickoffReached
-              || featuredResultOnly
-              || featuredMatch.status === Constants.MatchStatus.COMPLETED;
             const featuredLeagueLabel = Util.getCompetitionLeagueName(featuredMatch.competition.tier.league);
             const featuredTierLabel = Util.getCompetitionTierName(featuredMatch.competition.tier);
             const autoJoinStatusLabel = featuredResultOnly
@@ -760,19 +752,6 @@ export default function () {
                     </aside>
                   </header>
                   <footer className="stack-y items-center gap-2 text-center">
-                    <button
-                      title={t('main.dashboard.matchSetup')}
-                      className="btn"
-                      disabled={matchSetupDisabled}
-                      onClick={() =>
-                        api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
-                          target: '/pregame',
-                          payload: featuredMatch.id,
-                        })
-                      }
-                    >
-                      <FaCog />
-                    </button>
                     <p className="text-sm opacity-85">{autoJoinStatusLabel}</p>
                   </footer>
                 </article>
