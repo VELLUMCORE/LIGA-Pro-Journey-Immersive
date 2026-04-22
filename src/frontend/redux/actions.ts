@@ -3,7 +3,7 @@
  *
  * @module
  */
-import { Constants, Util } from "@liga/shared";
+import { Constants, Eagers, Util } from "@liga/shared";
 import { AppDispatch, AppState } from "./state";
 
 /** Redux Action Enum */
@@ -96,9 +96,60 @@ export function calendarAdvance(days?: number) {
   };
 }
 
+async function ensurePlayableMatchMaps(matchId: number, profile: AppState["profile"]) {
+  const match = await api.match.find({
+    where: { id: matchId },
+    include: Eagers.match.include,
+  });
+
+  if (!match?.games?.length || match.games.length < 2) {
+    return;
+  }
+
+  const configuredMaps = match.games.map((game) => game.map).filter(Boolean);
+  const uniqueConfiguredMaps = [...new Set(configuredMaps)];
+
+  if (uniqueConfiguredMaps.length >= match.games.length) {
+    return;
+  }
+
+  const settings = profile ? Util.loadSettings(profile.settings) : Constants.Settings;
+  const mapPool = await api.mapPool.find({
+    where: {
+      gameVersion: {
+        slug: settings.general.game,
+      },
+      position: {
+        not: null,
+      },
+    },
+    orderBy: {
+      position: 'asc',
+    },
+  });
+  const activeMaps = mapPool
+    .map((entry) => entry.gameMap.name)
+    .filter(Boolean);
+
+  if (!activeMaps.length) {
+    return;
+  }
+
+  const resolvedMaps = [
+    ...uniqueConfiguredMaps.filter((map) => activeMaps.includes(map)),
+    ...activeMaps.filter((map) => !uniqueConfiguredMaps.includes(map)),
+  ];
+
+  while (resolvedMaps.length < match.games.length) {
+    resolvedMaps.push(activeMaps[resolvedMaps.length % activeMaps.length] || 'de_dust2');
+  }
+
+  await api.match.updateMapList(matchId, resolvedMaps.slice(0, match.games.length));
+}
+
 /** Async: start gameplay */
 export function play(id: number, spectatingOrOptions?: boolean | { spectating?: boolean }) {
-  return async (dispatch: AppDispatch) => {
+  return async (dispatch: AppDispatch, getState: () => AppState) => {
     const spectating = typeof spectatingOrOptions === 'boolean'
       ? spectatingOrOptions
       : Boolean(spectatingOrOptions?.spectating);
@@ -107,6 +158,7 @@ export function play(id: number, spectatingOrOptions?: boolean | { spectating?: 
 
     try {
       await Util.sleep(1000);
+      await ensurePlayableMatchMaps(id, getState().profile);
       await api.play.start(spectating, id);
 
       const match = await api.match.find({ where: { id } });
