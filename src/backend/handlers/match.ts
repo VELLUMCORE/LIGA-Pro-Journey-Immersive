@@ -6,7 +6,7 @@
 import Tournament from '@liga/shared/tournament';
 import { ipcMain } from 'electron';
 import { differenceBy } from 'lodash';
-import { Constants, Eagers } from '@liga/shared';
+import { Constants, Eagers, Util, is } from '@liga/shared';
 import { DatabaseClient } from '@liga/backend/lib';
 import { Prisma } from '@prisma/client';
 
@@ -28,6 +28,18 @@ async function ensureMatchVetoTable() {
       CONSTRAINT "MatchVeto_teamId_fkey" FOREIGN KEY ("teamId") REFERENCES "Team" ("id") ON DELETE SET NULL ON UPDATE CASCADE
     )
   `);
+}
+
+async function ensureDeveloperDebugEnabled() {
+  if (!is.dev()) {
+    throw new Error('DEBUG_DEV_ONLY');
+  }
+
+  const profile = await DatabaseClient.prisma.profile.findFirst();
+  const settings = Util.loadSettings(profile?.settings);
+  if (!(settings.general as any).debug) {
+    throw new Error('DEBUG_MODE_DISABLED');
+  }
 }
 
 /**
@@ -113,6 +125,44 @@ export default function () {
       return true;
     },
   );
+  ipcMain.handle('/debug/match-reschedule', async (_, payload: { matchId: number; time: string }) => {
+    await ensureDeveloperDebugEnabled();
+
+    const matchId = Number(payload?.matchId);
+    const time = String(payload?.time || '');
+    if (!Number.isFinite(matchId) || matchId <= 0 || !/^\d{2}:\d{2}$/.test(time)) {
+      throw new Error('INVALID_DEBUG_RESCHEDULE_PAYLOAD');
+    }
+
+    const match = await DatabaseClient.prisma.match.findFirst({ where: { id: matchId } });
+    if (!match || match.status === Constants.MatchStatus.COMPLETED) {
+      throw new Error('MATCH_NOT_FOUND');
+    }
+
+    const [hours, minutes] = time.split(':').map((value) => Number(value));
+    const nextDate = new Date(match.date);
+    nextDate.setHours(hours, minutes, 0, 0);
+
+    const updated = await DatabaseClient.prisma.match.update({
+      where: { id: match.id },
+      data: { date: nextDate },
+      include: Eagers.match.include,
+    });
+
+    await DatabaseClient.prisma.calendar.updateMany({
+      where: {
+        payload: String(match.id),
+        type: {
+          in: [Constants.CalendarEntry.MATCHDAY_USER, Constants.CalendarEntry.MATCHDAY_NPC],
+        },
+      },
+      data: {
+        date: nextDate,
+      },
+    });
+
+    return updated;
+  });
   ipcMain.handle(Constants.IPCRoute.MATCHES_ALL, (_, query: Prisma.MatchFindManyArgs) =>
     DatabaseClient.prisma.match.findMany(query),
   );
