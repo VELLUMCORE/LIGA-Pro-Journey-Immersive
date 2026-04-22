@@ -6,6 +6,7 @@
 import Tournament from '@liga/shared/tournament';
 import { ipcMain } from 'electron';
 import { differenceBy } from 'lodash';
+import { startOfDay } from 'date-fns';
 import { Constants, Eagers, Util, is } from '@liga/shared';
 import { DatabaseClient } from '@liga/backend/lib';
 import { Prisma } from '@prisma/client';
@@ -207,7 +208,7 @@ export default function () {
             query.where ?? {},
             {
               competitionId: { not: null },
-              date: { gte: profile.date.toISOString() },
+              date: { gte: startOfDay(profile.date).toISOString() },
               competitors: { some: { teamId: profile.teamId } },
               status: { not: Constants.MatchStatus.COMPLETED },
             },
