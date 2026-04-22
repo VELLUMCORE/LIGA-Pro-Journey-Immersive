@@ -354,8 +354,6 @@ export default function registerDebugOverrides() {
       const style = payload?.style || 'DEFAULT';
       const roomBase = await FaceitMatchmaker.createMatchRoom(prisma, {
         id: profile.player.id,
-        name: profile.player.name,
-        elo: profile.faceitElo,
         queueElo: profile.faceitElo,
         maxPartyEloDelta: 0,
       });
