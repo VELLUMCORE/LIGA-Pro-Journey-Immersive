@@ -36,6 +36,9 @@ const NUM_UPCOMING = 5 + 1; // adds an extra for "next match"
 /** @constant */
 const NUM_PREVIOUS = 5;
 
+/** @constant */
+const LATE_SPECTATE_GRACE_MINUTES = 10;
+
 /**
  * Application status error banner.
  *
@@ -258,7 +261,7 @@ export default function () {
   const featuredKickoffReached = featuredElapsedMinutes != null && featuredElapsedMinutes >= 0;
   const featuredShouldSpectate =
     featuredElapsedMinutes != null
-    && featuredElapsedMinutes >= 5
+    && featuredElapsedMinutes >= LATE_SPECTATE_GRACE_MINUTES
     && featuredElapsedMinutes <= featuredSeriesWindowMinutes;
   const featuredResultOnly =
     featuredElapsedMinutes != null
@@ -313,6 +316,7 @@ export default function () {
                   const opponent = match.competitors.find(
                     (competitor) => competitor.teamId !== state.profile.teamId,
                   );
+                  const competitionTierLabel = Util.getCompetitionTierName(match.competition.tier);
                   return (
                     <tr key={`${match.id}__match_upcoming`}>
                       <td className="w-1/6" title={format(match.date, 'PPPP p')}>
@@ -330,9 +334,9 @@ export default function () {
                       </td>
                       <td
                         className="w-2/6 truncate"
-                        title={`${match.competition.tier.league.name}: ${Constants.IdiomaticTier[match.competition.tier.slug]}`}
+                        title={`${match.competition.tier.league.name}: ${competitionTierLabel}`}
                       >
-                        {Constants.IdiomaticTier[match.competition.tier.slug]}
+                        {competitionTierLabel}
                       </td>
                     </tr>
                   );
@@ -384,7 +388,7 @@ export default function () {
                         />
                         <header>
                           <h3>{featuredMatch.competition.tier.league.name}</h3>
-                          <h4>{Constants.IdiomaticTier[featuredMatch.competition.tier.slug]}</h4>
+                          <h4>{Util.getCompetitionTierName(featuredMatch.competition.tier)}</h4>
                           <h5>
                             {t('shared.matchday')} {featuredMatch.round}
                           </h5>
@@ -397,7 +401,7 @@ export default function () {
                         title={
                           standings.competition.tier.league.slug ===
                             Constants.LeagueSlug.ESPORTS_LEAGUE
-                            ? Constants.IdiomaticTier[standings.competition.tier.slug]
+                            ? Util.getCompetitionTierName(standings.competition.tier)
                             : `${t('shared.group')} ${Util.toAlpha(userTeam.group)}`
                         }
                         zones={
@@ -440,7 +444,7 @@ export default function () {
                       />
                       <header>
                         <h3>{featuredMatch.competition.tier.league.name}</h3>
-                        <h4>{Constants.IdiomaticTier[featuredMatch.competition.tier.slug]}</h4>
+                        <h4>{Util.getCompetitionTierName(featuredMatch.competition.tier)}</h4>
                         <h5>
                           {featuredMatch.competition.tier.groupSize
                             ? `${t('shared.matchday')} ${featuredMatch.round}`
@@ -686,7 +690,7 @@ export default function () {
                     </aside>
                     <aside className="center h-full gap-4">
                       <Image
-                        title={`${featuredMatch.competition.tier.league.name}: ${Constants.IdiomaticTier[featuredMatch.competition.tier.slug]}`}
+                        title={`${featuredMatch.competition.tier.league.name}: ${Util.getCompetitionTierName(featuredMatch.competition.tier)}`}
                         className="size-24"
                         src={Util.getCompetitionLogo(
                           featuredMatch.competition.tier.slug,
@@ -922,6 +926,7 @@ export default function () {
                                     },
                                   )
                                 : null;
+                            const competitionTierLabel = Util.getCompetitionTierName(match.competition.tier);
 
                             return (
                               <tr
@@ -965,9 +970,9 @@ export default function () {
                                 </td>
                                 <td
                                   className="w-3/12 truncate"
-                                  title={`${match.competition.tier.league.name}: ${Constants.IdiomaticTier[match.competition.tier.slug]}`}
+                                  title={`${match.competition.tier.league.name}: ${competitionTierLabel}`}
                                 >
-                                  {Constants.IdiomaticTier[match.competition.tier.slug]}
+                                  {competitionTierLabel}
                                 </td>
                               </tr>
                             );
