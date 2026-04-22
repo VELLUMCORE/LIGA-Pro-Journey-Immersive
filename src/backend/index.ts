@@ -37,6 +37,10 @@ async function handleOnReady() {
   // register all ipc handlers
   Object.values(IPCHandlers).forEach((handler) => handler());
 
+  // Re-apply debug-only overrides after the generic handler sweep so
+  // the dev routes replace any earlier registrations deterministically.
+  IPCHandlers.IPCDebugHandler?.();
+
   // register all protocol handlers
   Object.values(Protocols).forEach((protocol) => protocol.handler());
 
