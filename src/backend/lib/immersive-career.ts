@@ -10,6 +10,7 @@ const MATCH_SLOTS = [13, 16, 19, 22];
 const PLAY_WINDOW_EARLY_MINUTES = 20;
 const MAP_SEGMENT_MINUTES = 60;
 const LATE_SPECTATE_GRACE_MINUTES = 5;
+const DEFAULT_REALTIME_MAP_WINDOW = 3;
 
 type RealtimeMatchPayload = Awaited<ReturnType<typeof loadRealtimeMatch>>;
 
@@ -43,7 +44,7 @@ export function withMatchKickoff(date: Date, matchOrdinal = 0): Date {
   return setMilliseconds(setSeconds(setMinutes(setHours(next, slotHour), 0), 0), 0);
 }
 
-function getRealtimeWindowMinutes(totalGames = 1): number {
+function getRealtimeWindowMinutes(totalGames = DEFAULT_REALTIME_MAP_WINDOW): number {
   return MAP_SEGMENT_MINUTES * Math.max(1, totalGames);
 }
 
@@ -55,13 +56,13 @@ export function shouldForceRealtimeSpectating(matchDate: Date, now: Date = new D
   return getElapsedRealtimeMatchMinutes(matchDate, now) >= LATE_SPECTATE_GRACE_MINUTES;
 }
 
-export function isWithinPlayableWindow(matchDate: Date, now: Date = new Date(), totalGames = 1): boolean {
+export function isWithinPlayableWindow(matchDate: Date, now: Date = new Date(), totalGames = DEFAULT_REALTIME_MAP_WINDOW): boolean {
   const opensAt = addMinutes(matchDate, -PLAY_WINDOW_EARLY_MINUTES);
   const closesAt = addMinutes(matchDate, getRealtimeWindowMinutes(totalGames));
   return !isAfter(opensAt, now) && !isAfter(now, closesAt);
 }
 
-export function hasMissedPlayableWindow(matchDate: Date, now: Date = new Date(), totalGames = 1): boolean {
+export function hasMissedPlayableWindow(matchDate: Date, now: Date = new Date(), totalGames = DEFAULT_REALTIME_MAP_WINDOW): boolean {
   const closesAt = addMinutes(matchDate, getRealtimeWindowMinutes(totalGames));
   return isAfter(now, closesAt);
 }
