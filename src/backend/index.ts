@@ -6,6 +6,7 @@
 import * as Sqrl from 'squirrelly';
 import { format } from "date-fns";
 import * as IPCHandlers from '@liga/backend/handlers';
+import registerDebugOverrides from '@liga/backend/handlers/debug';
 import * as Protocols from '@liga/backend/protocols';
 import log from 'electron-log';
 import { app, protocol, BrowserWindow } from 'electron';
@@ -37,9 +38,9 @@ async function handleOnReady() {
   // register all ipc handlers
   Object.values(IPCHandlers).forEach((handler) => handler());
 
-  // Re-apply debug-only overrides after the generic handler sweep so
-  // the dev routes replace any earlier registrations deterministically.
-  IPCHandlers.IPCDebugHandler?.();
+  // Apply debug-only overrides after the base handler sweep so
+  // the dev routes replace earlier registrations deterministically.
+  registerDebugOverrides();
 
   // register all protocol handlers
   Object.values(Protocols).forEach((protocol) => protocol.handler());
