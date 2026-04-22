@@ -436,6 +436,36 @@ export function getCompetitionLogo(
 }
 
 /**
+ * Returns the user-facing competition tier name.
+ *
+ * Seeded tier names take precedence so real event names can
+ * override the generic idiomatic slug labels.
+ *
+ * @param tier The tier object or slug string.
+ * @function
+ */
+export function getCompetitionTierName(
+  tier:
+    | { slug?: string | null; name?: string | null }
+    | string
+    | null
+    | undefined,
+) {
+  const idiomaticTierMap = Constants.IdiomaticTier as Record<string, string>;
+
+  if (!tier) {
+    return '';
+  }
+
+  if (typeof tier === 'string') {
+    return idiomaticTierMap[tier] || tier;
+  }
+
+  const slug = tier.slug || '';
+  return tier.name || idiomaticTierMap[slug] || slug;
+}
+
+/**
  * Gets the expected score value using the Elo formula.
  *
  * @param ratingA Expected score for Team A.
