@@ -97,19 +97,26 @@ export function calendarAdvance(days?: number) {
 }
 
 /** Async: start gameplay */
-export function play(id: number, spectating?: boolean) {
+export function play(id: number, spectatingOrOptions?: boolean | { spectating?: boolean }) {
   return async (dispatch: AppDispatch) => {
+    const spectating = typeof spectatingOrOptions === 'boolean'
+      ? spectatingOrOptions
+      : Boolean(spectatingOrOptions?.spectating);
+
     dispatch(playingUpdate(true));
-    await Util.sleep(1000);
-    await api.play.start(spectating);
 
-    const match = await api.match.find({ where: { id } });
+    try {
+      await Util.sleep(1000);
+      await api.play.start(spectating, id);
 
-    if (match.status === Constants.MatchStatus.COMPLETED) {
-      dispatch(calendarAdvance(1));
+      const match = await api.match.find({ where: { id } });
+
+      if (match.status === Constants.MatchStatus.COMPLETED) {
+        dispatch(calendarAdvance(1));
+      }
+    } finally {
+      dispatch(playingUpdate(false));
     }
-
-    dispatch(playingUpdate(false));
   };
 }
 export function faceitRoomSet(room: any, matchId?: number) {
