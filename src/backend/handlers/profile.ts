@@ -10,9 +10,27 @@ import log from "electron-log";
 import { ipcMain } from "electron";
 import { glob } from "glob";
 import { Prisma } from "@prisma/client";
-import { Constants, Util } from "@liga/shared";
+import { Constants, Util, is } from "@liga/shared";
 import { DatabaseClient, Game, WindowManager, Worldgen } from "@liga/backend/lib";
 import { syncRealtimeWorld } from "@liga/backend/lib/immersive-career";
+
+async function ensureDeveloperDebugProfile() {
+  if (!is.dev()) {
+    throw new Error('DEBUG_DEV_ONLY');
+  }
+
+  const profile = await DatabaseClient.prisma.profile.findFirst({ include: { player: true } });
+  if (!profile?.playerId) {
+    throw new Error('PROFILE_NOT_FOUND');
+  }
+
+  const settings = Util.loadSettings(profile.settings);
+  if (!(settings.general as any).debug) {
+    throw new Error('DEBUG_MODE_DISABLED');
+  }
+
+  return profile;
+}
 
 export default function registerProfileHandlers() {
   ipcMain.handle(
@@ -116,6 +134,56 @@ export default function registerProfileHandlers() {
       return updated;
     }
   );
+
+  ipcMain.handle('/debug/team-offer', async (_, teamId: number) => {
+    const profile = await ensureDeveloperDebugProfile();
+
+    const team = await DatabaseClient.prisma.team.findFirst({ where: { id: Number(teamId) } });
+    if (!team || team.id === profile.teamId) {
+      throw new Error('TEAM_NOT_FOUND');
+    }
+
+    const noTeam = await DatabaseClient.prisma.team.findFirst({
+      where: {
+        OR: [
+          { slug: 'no-team' },
+          { name: 'No Team' },
+        ],
+      },
+    });
+
+    const fromTeamId = profile.teamId ?? noTeam?.id;
+    if (!fromTeamId) {
+      throw new Error('SOURCE_TEAM_NOT_FOUND');
+    }
+
+    const transfer = await DatabaseClient.prisma.transfer.create({
+      data: {
+        status: Constants.TransferStatus.PLAYER_PENDING,
+        teamIdFrom: fromTeamId,
+        teamIdTo: team.id,
+        playerId: profile.playerId,
+        offers: {
+          create: {
+            status: Constants.TransferStatus.PLAYER_PENDING,
+            cost: 0,
+            wages: Math.max(profile.player?.wages ?? 1000, 1000),
+            contractYears: 1,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          },
+        },
+      },
+      include: {
+        offers: true,
+        from: true,
+        to: true,
+        target: true,
+      },
+    });
+
+    WindowManager.sendAll(Constants.IPCRoute.TRANSFER_UPDATE);
+    return transfer;
+  });
 
   ipcMain.handle(Constants.IPCRoute.SAVES_ALL, async () => {
     const saves = [];
