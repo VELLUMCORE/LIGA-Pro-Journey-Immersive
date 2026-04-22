@@ -30,8 +30,16 @@ export default function () {
   const [activeTab, setActiveTab] = React.useState(Tab.GENERAL);
   const [settings, setSettings] = React.useState(Util.loadSettings(state.profile.settings));
   const [appStatus, setAppStatus] = React.useState<NodeJS.ErrnoException>();
-  const hasAttemptedDedicatedDetection = React.useRef(false); const [debugTeamId, setDebugTeamId] = React.useState('');
+  const [appInfo, setAppInfo] = React.useState<{ isDev?: boolean } | null>(null);
+  const hasAttemptedDedicatedDetection = React.useRef(false);
   const GAME_SLUG = Constants.Game.CSGO;
+  const isDeveloperBuild = Boolean(appInfo?.isDev);
+  const debugEnabled = Boolean((settings.general as any).debug);
+
+  // load app info
+  React.useEffect(() => {
+    api.app.info().then((info: any) => setAppInfo(info)).catch(() => setAppInfo(null));
+  }, []);
 
   // load settings
   React.useEffect(() => {
@@ -208,88 +216,22 @@ const onDateSkippableToggle = async (checked: boolean) => {
   </article>
 </section>
 
-<section>
-  <header>
-    <p>Debug Mode</p>
-    <p>Enable testing shortcuts and forced simulation actions.</p>
-  </header>
-  <article>
-    <input
-      type="checkbox"
-      className="toggle"
-      onChange={(event) => onSettingsUpdate('general.debug', event.target.checked)}
-      checked={Boolean(settings.general.debug)}
-      value={String(Boolean(settings.general.debug))}
-    />
-  </article>
-</section>
-{settings.general.debug && (
-  <>
-    <section>
-      <header>
-        <p>Debug: Team Offer</p>
-        <p>Enter a Team ID to instantly create a contract offer from that team.</p>
-      </header>
-      <article className="join">
-        <input
-          type="number"
-          min={1}
-          className="input join-item bg-base-200 text-sm"
-          placeholder="Team ID"
-          value={debugTeamId}
-          onChange={(event) => setDebugTeamId(event.target.value)}
-        />
-        <button
-          type="button"
-          className="btn join-item"
-          onClick={() => {
-            const teamId = Number(debugTeamId);
-            if (Number.isFinite(teamId) && teamId > 0) {
-              void api.debug.teamOffer(teamId);
-            }
-          }}
-        >
-          Create offer
-        </button>
-      </article>
-    </section>
-
-    <section>
-      <header>
-        <p>Debug: FACEIT Result</p>
-        <p>Resolve a FACEIT match instantly without launching gameplay.</p>
-      </header>
-      <article className="join">
-        <button type="button" className="btn join-item" onClick={() => void api.debug.faceitResult('W')}>
-          W
-        </button>
-        <button type="button" className="btn join-item" onClick={() => void api.debug.faceitResult('D')}>
-          D
-        </button>
-        <button type="button" className="btn join-item" onClick={() => void api.debug.faceitResult('L')}>
-          L
-        </button>
-      </article>
-    </section>
-
-    <section>
-      <header>
-        <p>Debug: Official Match Result</p>
-        <p>Resolve your next scheduled competition match instantly.</p>
-      </header>
-      <article className="join">
-        <button type="button" className="btn join-item" onClick={() => void api.debug.competitionResult('W')}>
-          W
-        </button>
-        <button type="button" className="btn join-item" onClick={() => void api.debug.competitionResult('D')}>
-          D
-        </button>
-        <button type="button" className="btn join-item" onClick={() => void api.debug.competitionResult('L')}>
-          L
-        </button>
-      </article>
-    </section>
-  </>
+{isDeveloperBuild && (
+  <section>
+    <header>
+      <p>Debug Mode</p>
+      <p>Enable developer-only debug controls inside app pages.</p>
+    </header>
+    <article>
+      <input
+        type="checkbox"
+        className="toggle"
+        onChange={(event) => onSettingsUpdate('general.debug', event.target.checked)}
+        checked={debugEnabled}
+        value={String(debugEnabled)}
+      />
+    </article>
+  </section>
 )}
 
             <section>
