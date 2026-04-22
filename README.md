@@ -31,7 +31,7 @@ This fork keeps that direction, then pushes it further with more real-time behav
    In theory, you can spectate matches outside your own immediate path, though this feature is still not fully verified.
 
 5. **Competitions now distinguish between online and offline formats**  
-   The system includes this distinction, even if it does not yet fully affect gameplay logic.
+   This is currently mostly a cosmetic / flavor distinction rather than a gameplay-changing system.
 
 6. **Friends' online status now changes in real time**  
    Presence is no longer refreshed on a simple per-day basis.
@@ -39,6 +39,9 @@ This fork keeps that direction, then pushes it further with more real-time behav
 ---
 
 ## Core Features
+
+Many features are based on the original **LIGA: Pro Journey** foundation.  
+**Pro Journey Immersive** builds on top of that base rather than replacing everything from scratch.
 
 ### Interactive Role Selection
 Choose how your career starts:
@@ -84,7 +87,10 @@ As your performances improve, better teams may become interested in you.
 Your results matter, your development matters, and your long-term career path is shaped by what happens on the server.
 
 ### Advanced Bot Behaviors
-Powered by the BetterBotsPlus ecosystem and the broader Pro Journey foundation, matches aim to feel closer to real Counter-Strike through smarter behavior, better utility use, and more believable round flow.
+The match experience still builds on existing bot and gameplay foundations from the original project ecosystem.
+
+**BetterBotPlus** is not made by this fork and belongs to its original author:  
+<https://github.com/rxpev/betterbotplus>
 
 ---
 
@@ -131,7 +137,7 @@ The main goals of this fork are:
 
 - **Original LIGA project**
 - **LIGA: Pro Journey** by rxpev
-- **BetterBotsPlus**
+- **BetterBotPlus**
 - Everyone who helped shape the player-career foundation this fork builds on
 
 ---
