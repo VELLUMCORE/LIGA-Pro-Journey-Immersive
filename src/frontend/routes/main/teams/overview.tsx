@@ -32,6 +32,7 @@ export default function () {
     Awaited<ReturnType<typeof api.matches.upcoming<typeof Eagers.match>>>
   >([]);
   const [settings, setSettings] = React.useState(Constants.Settings);
+  const [appInfo, setAppInfo] = React.useState<{ isDev?: boolean } | null>(null);
   const [squad, setSquad] = React.useState<
     Awaited<ReturnType<typeof api.players.all<typeof Eagers.player>>>
   >([]);
@@ -39,6 +40,7 @@ export default function () {
   const [transfers, setTransfers] = React.useState<
     Awaited<ReturnType<typeof api.transfers.all<typeof Eagers.transfer>>>
   >([]);
+  const debugEnabled = Boolean(appInfo?.isDev && (settings.general as any).debug);
 
   const openPlayerTransferModal = React.useCallback((playerId: number) => {
     api.window.send<ModalRequest>(Constants.WindowIdentifier.Modal, {
@@ -79,6 +81,10 @@ export default function () {
       .then(setSquad);
     api.team.transfers(team.id).then(setTransfers);
   }, [team]);
+
+  React.useEffect(() => {
+    api.app.info().then((info: any) => setAppInfo(info)).catch(() => setAppInfo(null));
+  }, []);
 
   // load settings
   React.useEffect(() => {
@@ -191,6 +197,17 @@ export default function () {
             </tbody>
           </table>
         </aside>
+        {debugEnabled && team.id !== state.profile?.teamId && (
+          <aside className="px-4 pt-4">
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              onClick={() => void api.debug.teamOffer(team.id)}
+            >
+              Get offer
+            </button>
+          </aside>
+        )}
         <aside>
           <header className="heading prose max-w-none border-t-0!">
             <h2>{t('shared.squad')}</h2>
