@@ -6,6 +6,21 @@
 import { Prisma, PrismaClient } from '@prisma/client';
 import { Constants } from '@liga/shared';
 
+const InvitationalTierSlug = {
+  IEM_KATOWICE_GROUP: 'iem-katowice:group',
+  IEM_KATOWICE_PLAYOFFS: 'iem-katowice:playoffs',
+  BLAST_OPEN_GROUP: 'blast-open:group',
+  BLAST_OPEN_PLAYOFFS: 'blast-open:playoffs',
+  PGL_CHAMPIONSHIP_GROUP: 'pgl-championship:group',
+  PGL_CHAMPIONSHIP_PLAYOFFS: 'pgl-championship:playoffs',
+  BLAST_BOUNTY: 'blast-bounty',
+  BLAST_RIVALS: 'blast-rivals',
+  ESPORTS_WORLD_CUP_GROUP: 'esports-world-cup:group',
+  ESPORTS_WORLD_CUP_PLAYOFFS: 'esports-world-cup:playoffs',
+  CS_ASIA_CHAMPIONSHIP_GROUP: 'cs-asia-championship:group',
+  CS_ASIA_CHAMPIONSHIP_PLAYOFFS: 'cs-asia-championship:playoffs',
+} as const;
+
 /** @type {LeagueSeedData} */
 type LeagueSeedData = Prisma.LeagueCreateInput & {
   tiers: Array<Prisma.TierCreateWithoutLeagueInput>;
@@ -84,23 +99,112 @@ const data: Array<LeagueSeedData> = [
     ],
   },
   {
-    name: 'ESL Pro League',
+    name: 'Global Invitational Circuit',
     slug: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-    startOffsetDays: 63,
+    startOffsetDays: 56,
     federations: [Constants.FederationSlug.ESPORTS_WORLD],
     tiers: [
       {
-        name: 'Conference Stage',
+        name: 'ESL Pro League Season 22 Group Stage',
         slug: Constants.TierSlug.LEAGUE_PRO,
         size: 32,
         groupSize: 4,
         triggerTierSlug: Constants.TierSlug.LEAGUE_PRO_PLAYOFFS,
       },
       {
-        name: 'Playoffs',
+        name: 'ESL Pro League Season 22 Playoffs',
         slug: Constants.TierSlug.LEAGUE_PRO_PLAYOFFS,
         size: 16,
+        triggerOffsetDays: 6,
+        triggerTierSlug: InvitationalTierSlug.IEM_KATOWICE_GROUP,
+      },
+      {
+        name: 'IEM Katowice Group Stage',
+        slug: InvitationalTierSlug.IEM_KATOWICE_GROUP,
+        size: 16,
+        groupSize: 4,
+        triggerOffsetDays: 12,
+        triggerTierSlug: InvitationalTierSlug.IEM_KATOWICE_PLAYOFFS,
+      },
+      {
+        name: 'IEM Katowice Playoffs',
+        slug: InvitationalTierSlug.IEM_KATOWICE_PLAYOFFS,
+        size: 8,
         triggerOffsetDays: 5,
+        triggerTierSlug: InvitationalTierSlug.BLAST_OPEN_GROUP,
+      },
+      {
+        name: 'BLAST Open Group Stage',
+        slug: InvitationalTierSlug.BLAST_OPEN_GROUP,
+        size: 16,
+        groupSize: 4,
+        triggerOffsetDays: 16,
+        triggerTierSlug: InvitationalTierSlug.BLAST_OPEN_PLAYOFFS,
+      },
+      {
+        name: 'BLAST Open Playoffs',
+        slug: InvitationalTierSlug.BLAST_OPEN_PLAYOFFS,
+        size: 8,
+        triggerOffsetDays: 5,
+        triggerTierSlug: InvitationalTierSlug.PGL_CHAMPIONSHIP_GROUP,
+      },
+      {
+        name: 'PGL Championship Group Stage',
+        slug: InvitationalTierSlug.PGL_CHAMPIONSHIP_GROUP,
+        size: 16,
+        groupSize: 4,
+        triggerOffsetDays: 14,
+        triggerTierSlug: InvitationalTierSlug.PGL_CHAMPIONSHIP_PLAYOFFS,
+      },
+      {
+        name: 'PGL Championship Playoffs',
+        slug: InvitationalTierSlug.PGL_CHAMPIONSHIP_PLAYOFFS,
+        size: 8,
+        triggerOffsetDays: 5,
+        triggerTierSlug: InvitationalTierSlug.BLAST_BOUNTY,
+      },
+      {
+        name: 'BLAST Bounty',
+        slug: InvitationalTierSlug.BLAST_BOUNTY,
+        size: 8,
+        triggerOffsetDays: 12,
+        triggerTierSlug: InvitationalTierSlug.BLAST_RIVALS,
+      },
+      {
+        name: 'BLAST Rivals',
+        slug: InvitationalTierSlug.BLAST_RIVALS,
+        size: 8,
+        triggerOffsetDays: 16,
+        triggerTierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP_GROUP,
+      },
+      {
+        name: 'Esports World Cup Group Stage',
+        slug: InvitationalTierSlug.ESPORTS_WORLD_CUP_GROUP,
+        size: 16,
+        groupSize: 4,
+        triggerOffsetDays: 20,
+        triggerTierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP_PLAYOFFS,
+      },
+      {
+        name: 'Esports World Cup Playoffs',
+        slug: InvitationalTierSlug.ESPORTS_WORLD_CUP_PLAYOFFS,
+        size: 8,
+        triggerOffsetDays: 6,
+        triggerTierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_GROUP,
+      },
+      {
+        name: 'CS Asia Championships Group Stage',
+        slug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_GROUP,
+        size: 8,
+        groupSize: 4,
+        triggerOffsetDays: 14,
+        triggerTierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_PLAYOFFS,
+      },
+      {
+        name: 'CS Asia Championships Playoffs',
+        slug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_PLAYOFFS,
+        size: 4,
+        triggerOffsetDays: 4,
       },
     ],
   },
