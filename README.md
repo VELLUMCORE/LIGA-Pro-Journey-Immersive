@@ -90,7 +90,7 @@ Your results matter, your development matters, and your long-term career path is
 The match experience still builds on existing bot and gameplay foundations from the original project ecosystem.
 
 **BetterBotPlus** is not made by this fork and belongs to its original author:  
-<https://github.com/rxpev/betterbotplus>
+<https://github.com/rxpev/BetterBotsPlus>
 
 ---
 
