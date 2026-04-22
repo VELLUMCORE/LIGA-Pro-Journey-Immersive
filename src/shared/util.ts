@@ -12,7 +12,7 @@ import * as Constants from './constants';
 
 const CompetitionLeagueDisplayNameBySlug: Partial<Record<string, string>> = {
   [Constants.LeagueSlug.ESPORTS_LEAGUE]: 'ESEA League',
-  [Constants.LeagueSlug.ESPORTS_PRO_LEAGUE]: 'ESL Pro League',
+  [Constants.LeagueSlug.ESPORTS_PRO_LEAGUE]: 'Global Invitational Circuit',
   [Constants.LeagueSlug.ESPORTS_MAJOR]: 'BLAST.tv Austin Major',
 };
 
@@ -25,8 +25,20 @@ const CompetitionTierDisplayNameBySlug: Partial<Record<string, string>> = {
   [Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS]: 'ESEA Main Playoffs',
   [Constants.TierSlug.LEAGUE_ADVANCED]: 'ESEA Advanced',
   [Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS]: 'ESEA Advanced Playoffs',
-  [Constants.TierSlug.LEAGUE_PRO]: 'Conference Stage',
-  [Constants.TierSlug.LEAGUE_PRO_PLAYOFFS]: 'Playoffs',
+  [Constants.TierSlug.LEAGUE_PRO]: 'ESL Pro League Season 22 Group Stage',
+  [Constants.TierSlug.LEAGUE_PRO_PLAYOFFS]: 'ESL Pro League Season 22 Playoffs',
+  'iem-katowice:group': 'IEM Katowice Group Stage',
+  'iem-katowice:playoffs': 'IEM Katowice Playoffs',
+  'blast-open:group': 'BLAST Open Group Stage',
+  'blast-open:playoffs': 'BLAST Open Playoffs',
+  'pgl-championship:group': 'PGL Championship Group Stage',
+  'pgl-championship:playoffs': 'PGL Championship Playoffs',
+  'blast-bounty': 'BLAST Bounty',
+  'blast-rivals': 'BLAST Rivals',
+  'esports-world-cup:group': 'Esports World Cup Group Stage',
+  'esports-world-cup:playoffs': 'Esports World Cup Playoffs',
+  'cs-asia-championship:group': 'CS Asia Championships Group Stage',
+  'cs-asia-championship:playoffs': 'CS Asia Championships Playoffs',
   [Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_1]: 'Austin Major Asia Open Qualifier #1',
   [Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_2]: 'Austin Major Asia Open Qualifier #2',
   [Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_1]: 'Austin Major China Open Qualifier #1',
@@ -46,6 +58,23 @@ const CompetitionTierDisplayNameBySlug: Partial<Record<string, string>> = {
   [Constants.TierSlug.MAJOR_CHALLENGERS_STAGE]: 'Austin Major Stage 1',
   [Constants.TierSlug.MAJOR_LEGENDS_STAGE]: 'Austin Major Stage 2',
   [Constants.TierSlug.MAJOR_CHAMPIONS_STAGE]: 'Austin Major Playoffs',
+};
+
+const CompetitionLogoSlugByTierSlug: Partial<Record<string, string>> = {
+  [Constants.TierSlug.LEAGUE_PRO]: 'esl-pro-league',
+  [Constants.TierSlug.LEAGUE_PRO_PLAYOFFS]: 'esl-pro-league',
+  'iem-katowice:group': 'iem-katowice',
+  'iem-katowice:playoffs': 'iem-katowice',
+  'blast-open:group': 'blast-open',
+  'blast-open:playoffs': 'blast-open',
+  'pgl-championship:group': 'pgl-championship',
+  'pgl-championship:playoffs': 'pgl-championship',
+  'blast-bounty': 'blast-bounty',
+  'blast-rivals': 'blast-rivals',
+  'esports-world-cup:group': 'esports-world-cup',
+  'esports-world-cup:playoffs': 'esports-world-cup',
+  'cs-asia-championship:group': 'cs-asia-championship',
+  'cs-asia-championship:playoffs': 'cs-asia-championship',
 };
 
 /**
@@ -372,7 +401,7 @@ export function loadSettings(settings: string) {
  * @function
  */
 export function sanitizeFileName(fileName: string) {
-  const sanitized = fileName.replace(/[<>:"/\\|?*]/g, '');
+  const sanitized = fileName.replace(/[<>:\"/\\|?*]/g, '');
   return sanitized.replace(/^\.+|\s+$|\.+$/g, '');
 }
 
@@ -459,7 +488,8 @@ export function getCompetitionLogo(
   federationSlug?: Constants.FederationSlug | string,
 ) {
   const protocol = 'resources://competitions/';
-  const slug = tierSlug.replace(/:/gi, '-');
+  const logoSlug = CompetitionLogoSlugByTierSlug[tierSlug] || tierSlug;
+  const slug = logoSlug.replace(/:/gi, '-');
 
   // circuits are not tied to a federation
   if (slug.includes('circuit')) {
