@@ -27,7 +27,7 @@ const PAGE_SIZE = 50;
 function getCompetitionLabel(
   match: Awaited<ReturnType<typeof api.matches.all<typeof Eagers.match>>>[number],
 ) {
-  const tier = Constants.IdiomaticTier[match.competition.tier.slug];
+  const tier = Util.getCompetitionTierName(match.competition.tier);
   const suffix =
     match.competition.tier.groupSize === null
       ? ` ${
