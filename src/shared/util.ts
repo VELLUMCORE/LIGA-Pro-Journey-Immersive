@@ -10,6 +10,44 @@ import type { Prisma } from '@prisma/client';
 import { differenceBy, merge, set } from 'lodash';
 import * as Constants from './constants';
 
+const CompetitionLeagueDisplayNameBySlug: Partial<Record<string, string>> = {
+  [Constants.LeagueSlug.ESPORTS_LEAGUE]: 'ESEA League',
+  [Constants.LeagueSlug.ESPORTS_PRO_LEAGUE]: 'ESL Pro League',
+  [Constants.LeagueSlug.ESPORTS_MAJOR]: 'BLAST.tv Austin Major',
+};
+
+const CompetitionTierDisplayNameBySlug: Partial<Record<string, string>> = {
+  [Constants.TierSlug.LEAGUE_OPEN]: 'ESEA Open',
+  [Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS]: 'ESEA Open Playoffs',
+  [Constants.TierSlug.LEAGUE_INTERMEDIATE]: 'ESEA Intermediate',
+  [Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS]: 'ESEA Intermediate Playoffs',
+  [Constants.TierSlug.LEAGUE_MAIN]: 'ESEA Main',
+  [Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS]: 'ESEA Main Playoffs',
+  [Constants.TierSlug.LEAGUE_ADVANCED]: 'ESEA Advanced',
+  [Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS]: 'ESEA Advanced Playoffs',
+  [Constants.TierSlug.LEAGUE_PRO]: 'Conference Stage',
+  [Constants.TierSlug.LEAGUE_PRO_PLAYOFFS]: 'Playoffs',
+  [Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_1]: 'Austin Major Asia Open Qualifier #1',
+  [Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_2]: 'Austin Major Asia Open Qualifier #2',
+  [Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_1]: 'Austin Major China Open Qualifier #1',
+  [Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_2]: 'Austin Major China Open Qualifier #2',
+  [Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1]: 'Austin Major Americas Open Qualifier #1',
+  [Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_2]: 'Austin Major Americas Open Qualifier #2',
+  [Constants.TierSlug.MAJOR_AMERICAS_RMR]: 'Austin Major Americas MRQ',
+  [Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1]: 'Austin Major Europe Open Qualifier #1',
+  [Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2]: 'Austin Major Europe Open Qualifier #2',
+  [Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_3]: 'Austin Major Europe Open Qualifier #3',
+  [Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_4]: 'Austin Major Europe Open Qualifier #4',
+  [Constants.TierSlug.MAJOR_EUROPE_RMR_A]: 'Austin Major Europe MRQ A',
+  [Constants.TierSlug.MAJOR_EUROPE_RMR_B]: 'Austin Major Europe MRQ B',
+  [Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_1]: 'Austin Major Oceania Open Qualifier #1',
+  [Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_2]: 'Austin Major Oceania Open Qualifier #2',
+  [Constants.TierSlug.MAJOR_ASIA_RMR]: 'Austin Major Asia-Pacific MRQ',
+  [Constants.TierSlug.MAJOR_CHALLENGERS_STAGE]: 'Austin Major Stage 1',
+  [Constants.TierSlug.MAJOR_LEGENDS_STAGE]: 'Austin Major Stage 2',
+  [Constants.TierSlug.MAJOR_CHAMPIONS_STAGE]: 'Austin Major Playoffs',
+};
+
 /**
  * Builds team query from provided filters.
  *
@@ -436,10 +474,32 @@ export function getCompetitionLogo(
 }
 
 /**
+ * Returns the user-facing competition league name.
+ *
+ * @param league The league object or slug string.
+ * @function
+ */
+export function getCompetitionLeagueName(
+  league:
+    | { slug?: string | null; name?: string | null }
+    | string
+    | null
+    | undefined,
+) {
+  if (!league) {
+    return '';
+  }
+
+  const slug = typeof league === 'string' ? league : (league.slug || '');
+  const fallback = typeof league === 'string' ? league : (league.name || slug);
+  return CompetitionLeagueDisplayNameBySlug[slug] || fallback;
+}
+
+/**
  * Returns the user-facing competition tier name.
  *
- * Seeded tier names take precedence so real event names can
- * override the generic idiomatic slug labels.
+ * Explicit per-slug event names take precedence so current saves
+ * still show refreshed real-event branding without reseeding.
  *
  * @param tier The tier object or slug string.
  * @function
@@ -458,11 +518,11 @@ export function getCompetitionTierName(
   }
 
   if (typeof tier === 'string') {
-    return idiomaticTierMap[tier] || tier;
+    return CompetitionTierDisplayNameBySlug[tier] || idiomaticTierMap[tier] || tier;
   }
 
   const slug = tier.slug || '';
-  return tier.name || idiomaticTierMap[slug] || slug;
+  return CompetitionTierDisplayNameBySlug[slug] || tier.name || idiomaticTierMap[slug] || slug;
 }
 
 /**
