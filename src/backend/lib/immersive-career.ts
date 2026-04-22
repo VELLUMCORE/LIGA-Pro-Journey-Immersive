@@ -230,13 +230,16 @@ async function simulateMissedRealtimeGame(
           data: {
             status: Constants.MatchStatus.COMPLETED,
             teams: {
-              update: currentGame.teams.map((entry) => ({
-                where: { id: entry.id },
-                data: {
-                  score: gameScore[entry.teamId],
-                  result: Simulator.getMatchResult(entry.teamId, gameScore),
-                },
-              })),
+              update: currentGame.teams.map((entry) => {
+                const teamId = Number(entry.teamId ?? 0);
+                return {
+                  where: { id: entry.id },
+                  data: {
+                    score: gameScore[teamId] ?? 0,
+                    result: Simulator.getMatchResult(teamId, gameScore),
+                  },
+                };
+              }),
             },
           },
         },
