@@ -11,6 +11,45 @@ import { differenceBy, flatten } from 'lodash';
 import { Prisma, Team } from '@prisma/client';
 import { Constants, Eagers, Util } from '@liga/shared';
 
+const InvitationalTierSlug = {
+  IEM_KATOWICE_GROUP: 'iem-katowice:group',
+  IEM_KATOWICE_PLAYOFFS: 'iem-katowice:playoffs',
+  BLAST_OPEN_GROUP: 'blast-open:group',
+  BLAST_OPEN_PLAYOFFS: 'blast-open:playoffs',
+  PGL_CHAMPIONSHIP_GROUP: 'pgl-championship:group',
+  PGL_CHAMPIONSHIP_PLAYOFFS: 'pgl-championship:playoffs',
+  BLAST_BOUNTY: 'blast-bounty',
+  BLAST_RIVALS: 'blast-rivals',
+  ESPORTS_WORLD_CUP_GROUP: 'esports-world-cup:group',
+  ESPORTS_WORLD_CUP_PLAYOFFS: 'esports-world-cup:playoffs',
+  CS_ASIA_CHAMPIONSHIP_GROUP: 'cs-asia-championship:group',
+  CS_ASIA_CHAMPIONSHIP_PLAYOFFS: 'cs-asia-championship:playoffs',
+} as const;
+
+const REGIONAL_LEAGUE_TIERS = new Set<string>([
+  Constants.TierSlug.LEAGUE_OPEN,
+  Constants.TierSlug.LEAGUE_INTERMEDIATE,
+  Constants.TierSlug.LEAGUE_MAIN,
+  Constants.TierSlug.LEAGUE_ADVANCED,
+]);
+
+const REGIONAL_LEAGUE_ALL_TIERS = new Set<string>([
+  ...REGIONAL_LEAGUE_TIERS,
+  Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
+  Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
+  Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
+  Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
+]);
+
+const REGIONAL_PLAYOFF_TIER_BY_TIER: Partial<Record<string, string>> = {
+  [Constants.TierSlug.LEAGUE_OPEN]: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
+  [Constants.TierSlug.LEAGUE_INTERMEDIATE]: Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
+  [Constants.TierSlug.LEAGUE_MAIN]: Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
+  [Constants.TierSlug.LEAGUE_ADVANCED]: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
+};
+
+const CUSTOM_INVITATIONAL_TIERS = new Set<string>(Object.values(InvitationalTierSlug));
+
 /**
  * Autofill syntax action types.
  *
@@ -25,8 +64,8 @@ export enum Action {
 /** @interface */
 export interface Entry {
   action: Action;
-  from: Constants.LeagueSlug;
-  target: Constants.TierSlug;
+  from: string;
+  target: string;
   start: Constants.Zones | number;
   end?: Constants.Zones | number;
   season?: number;
@@ -37,273 +76,62 @@ export interface Entry {
 
 /** @interface */
 export interface Item {
-  tierSlug: Constants.TierSlug;
+  tierSlug: string;
   on: Constants.CalendarEntry;
   entries: Array<Entry>;
 }
 
+const regionalEntry = (
+  action: Action,
+  target: string,
+  federationSlug: Constants.FederationSlug,
+  start: number,
+  end?: number,
+  season?: number,
+  from = Constants.LeagueSlug.ESPORTS_LEAGUE,
+): Entry => ({
+  action,
+  from,
+  target,
+  federationSlug,
+  start,
+  ...(end ? { end } : {}),
+  ...(typeof season === 'number' ? { season } : {}),
+});
+
+const worldEntry = (
+  action: Action,
+  target: string,
+  start: number,
+  end?: number,
+  federationSlug = Constants.FederationSlug.ESPORTS_WORLD,
+): Entry => ({
+  action,
+  from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+  target,
+  federationSlug,
+  start,
+  ...(end ? { end } : {}),
+});
+
 /** @constant */
 export const Items: Array<Item> = [
-  {
-    tierSlug: Constants.TierSlug.LEAGUE_PRO,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [
-      // ESL Pro League: retain the best-finished teams per federation
-      // to preserve the regional slot split (EU 9 / AM 4 / AS 2 / OCE 1).
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 9,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 4,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 2,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 1,
-        season: -1,
-      },
-      // First-season fallback: seed by top prestige per federation
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 9,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 4,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 2,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 1,
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.LEAGUE_PRO,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      // EU/AM/AS/OCE qualifiers from advanced playoffs (same season)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 8,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 3,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 1,
-        season: 0,
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.LEAGUE_PRO_PLAYOFFS,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.LEAGUE_PRO_PLAYOFFS,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        start: 0,
-        end: 16,
-        season: 0,
-      },
-    ],
-  },
   {
     tierSlug: Constants.TierSlug.LEAGUE_OPEN,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [
-      // EU/NA: 5th thru 16th open playoffs stay open (12 teams)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 5,
-        end: 16,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 5,
-        end: 16,
-        season: -1,
-      },
-      // EU/NA: 17th thru 40th open stay open (24 teams)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 17,
-        end: 40,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 17,
-        end: 40,
-        season: -1,
-      },
-      // EU/NA: bottom 4 intermediate relegate to open
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 27,
-        end: 30,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 27,
-        end: 30,
-        season: -1,
-      },
-      // Asia: 3rd thru 8th open playoffs stay open (6 teams)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 3,
-        end: 8,
-        season: -1,
-      },
-      // Asia: 9th thru 30th open stay open (22 teams)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 9,
-        end: 30,
-        season: -1,
-      },
-      // Asia: bottom 2 advanced relegate to open
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 19,
-        end: 20,
-        season: -1,
-      },
-      // OCE: 3rd thru 8th open playoffs stay open (6 teams)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 3,
-        end: 8,
-        season: -1,
-      },
-      // OCE: 9th thru 20th open stay open (12 teams)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 9,
-        end: 20,
-        season: -1,
-      },
-      // OCE: bottom 2 advanced relegate to open
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 15,
-        end: 16,
-        season: -1,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN, Constants.FederationSlug.ESPORTS_EUROPA, 17, 40, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS, Constants.FederationSlug.ESPORTS_EUROPA, 5, 16, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE, Constants.FederationSlug.ESPORTS_EUROPA, 27, 30, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN, Constants.FederationSlug.ESPORTS_AMERICAS, 17, 40, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS, Constants.FederationSlug.ESPORTS_AMERICAS, 5, 16, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE, Constants.FederationSlug.ESPORTS_AMERICAS, 27, 30, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN, Constants.FederationSlug.ESPORTS_ASIA, 9, 30, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS, Constants.FederationSlug.ESPORTS_ASIA, 3, 8, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_ASIA, 19, 20, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN, Constants.FederationSlug.ESPORTS_OCE, 9, 20, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS, Constants.FederationSlug.ESPORTS_OCE, 3, 8, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_OCE, 15, 16, -1),
       {
         action: Action.FALLBACK,
         from: Constants.LeagueSlug.ESPORTS_LEAGUE,
@@ -321,124 +149,24 @@ export const Items: Array<Item> = [
     tierSlug: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
     on: Constants.CalendarEntry.COMPETITION_START,
     entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 0,
-        end: 16,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 0,
-        end: 16,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 0,
-        end: 8,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 0,
-        end: 8,
-        season: 0,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN, Constants.FederationSlug.ESPORTS_EUROPA, 1, 16, 0),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 16, 0),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN, Constants.FederationSlug.ESPORTS_ASIA, 1, 8, 0),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN, Constants.FederationSlug.ESPORTS_OCE, 1, 8, 0),
     ],
   },
   {
     tierSlug: Constants.TierSlug.LEAGUE_INTERMEDIATE,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [
-      // EU/NA: top 4 open playoffs promote to intermediate
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 4,
-        season: -1,
-      },
-      // EU/NA: 5th thru 8th intermediate playoffs stay in intermediate
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 5,
-        end: 8,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 5,
-        end: 8,
-        season: -1,
-      },
-      // EU/NA: 9th thru 26th intermediate stay in intermediate
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 9,
-        end: 26,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 9,
-        end: 26,
-        season: -1,
-      },
-      // EU/NA: bottom 4 main relegate to intermediate
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 17,
-        end: 20,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 17,
-        end: 20,
-        season: -1,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS, Constants.FederationSlug.ESPORTS_EUROPA, 1, 4, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE, Constants.FederationSlug.ESPORTS_EUROPA, 9, 26, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS, Constants.FederationSlug.ESPORTS_EUROPA, 5, 8, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN, Constants.FederationSlug.ESPORTS_EUROPA, 17, 20, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 4, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE, Constants.FederationSlug.ESPORTS_AMERICAS, 9, 26, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS, Constants.FederationSlug.ESPORTS_AMERICAS, 5, 8, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN, Constants.FederationSlug.ESPORTS_AMERICAS, 17, 20, -1),
       {
         action: Action.FALLBACK,
         from: Constants.LeagueSlug.ESPORTS_LEAGUE,
@@ -456,106 +184,22 @@ export const Items: Array<Item> = [
     tierSlug: Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
     on: Constants.CalendarEntry.COMPETITION_START,
     entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 0,
-        end: 8,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 0,
-        end: 8,
-        season: 0,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE, Constants.FederationSlug.ESPORTS_EUROPA, 1, 8, 0),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 8, 0),
     ],
   },
   {
     tierSlug: Constants.TierSlug.LEAGUE_MAIN,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [
-      // EU/NA: top 4 intermediate playoffs promote to main
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 4,
-        season: -1,
-      },
-      // EU/NA: 5th thru 8th main playoffs stay in main
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 5,
-        end: 8,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 5,
-        end: 8,
-        season: -1,
-      },
-      // EU/NA: 9th thru 16th main stay in main
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 9,
-        end: 16,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 9,
-        end: 16,
-        season: -1,
-      },
-      // EU/NA: bottom 4 advanced relegate to main
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 17,
-        end: 20,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 17,
-        end: 20,
-        season: -1,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS, Constants.FederationSlug.ESPORTS_EUROPA, 1, 4, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN, Constants.FederationSlug.ESPORTS_EUROPA, 9, 16, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS, Constants.FederationSlug.ESPORTS_EUROPA, 5, 8, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_EUROPA, 17, 20, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 4, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN, Constants.FederationSlug.ESPORTS_AMERICAS, 9, 16, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS, Constants.FederationSlug.ESPORTS_AMERICAS, 5, 8, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_AMERICAS, 17, 20, -1),
       {
         action: Action.FALLBACK,
         from: Constants.LeagueSlug.ESPORTS_LEAGUE,
@@ -573,169 +217,26 @@ export const Items: Array<Item> = [
     tierSlug: Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
     on: Constants.CalendarEntry.COMPETITION_START,
     entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 0,
-        end: 8,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 0,
-        end: 8,
-        season: 0,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN, Constants.FederationSlug.ESPORTS_EUROPA, 1, 8, 0),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 8, 0),
     ],
   },
   {
     tierSlug: Constants.TierSlug.LEAGUE_ADVANCED,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [
-      // EPL: federation-based relegation back to advanced
-      // NOTE: world-league entries are federation-filtered before range slicing,
-      // so these ranges must be relative to each federation's EPL cohort
-      // (EU 17 => keep 9/relegate 8, AM 8 => keep 4/relegate 4,
-      // AS 5 => keep 2/relegate 3, OCE 2 => keep 1/relegate 1).
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 10,
-        end: 17,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 5,
-        end: 8,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 3,
-        end: 5,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 2,
-        end: 2,
-        season: -1,
-      },
-      // EU/NA: top 4 main playoffs promote to advanced
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 4,
-        season: -1,
-      },
-      // EU/NA: keep advanced playoff teams (9th-16th)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 9,
-        end: 16,
-        season: -1,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 9,
-        end: 16,
-        season: -1,
-      },
-      // Asia: top 2 open playoffs promote to advanced
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 2,
-        season: -1,
-      },
-      // Asia: keep advanced playoff teams (4th-8th)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 4,
-        end: 8,
-        season: -1,
-      },
-      // Asia: 9th thru 18th advanced stay advanced
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 9,
-        end: 18,
-        season: -1,
-      },
-      // OCE: top 2 open playoffs promote to advanced
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 2,
-        season: -1,
-      },
-      // OCE: keep advanced playoff teams (2nd-8th)
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 2,
-        end: 8,
-        season: -1,
-      },
-      // OCE: 9th thru 13th advanced stay advanced
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 9,
-        end: 13,
-        season: -1,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS, Constants.FederationSlug.ESPORTS_EUROPA, 1, 4, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_EUROPA, 9, 16, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS, Constants.FederationSlug.ESPORTS_EUROPA, 5, 16, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 4, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_AMERICAS, 9, 16, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS, Constants.FederationSlug.ESPORTS_AMERICAS, 5, 16, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS, Constants.FederationSlug.ESPORTS_ASIA, 1, 2, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_ASIA, 9, 18, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS, Constants.FederationSlug.ESPORTS_ASIA, 4, 8, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS, Constants.FederationSlug.ESPORTS_OCE, 1, 2, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_OCE, 9, 13, -1),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS, Constants.FederationSlug.ESPORTS_OCE, 2, 8, -1),
       {
         action: Action.FALLBACK,
         from: Constants.LeagueSlug.ESPORTS_LEAGUE,
@@ -753,177 +254,246 @@ export const Items: Array<Item> = [
     tierSlug: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
     on: Constants.CalendarEntry.COMPETITION_START,
     entries: [
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_EUROPA, 1, 16, 0),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 16, 0),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_ASIA, 1, 8, 0),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_ADVANCED, Constants.FederationSlug.ESPORTS_OCE, 1, 8, 0),
+    ],
+  },
+  {
+    tierSlug: Constants.TierSlug.LEAGUE_PRO,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [
+      worldEntry(Action.FALLBACK, Constants.TierSlug.LEAGUE_PRO, 1, 16, Constants.FederationSlug.ESPORTS_EUROPA),
+      worldEntry(Action.FALLBACK, Constants.TierSlug.LEAGUE_PRO, 1, 8, Constants.FederationSlug.ESPORTS_AMERICAS),
+      worldEntry(Action.FALLBACK, Constants.TierSlug.LEAGUE_PRO, 1, 4, Constants.FederationSlug.ESPORTS_ASIA),
+      worldEntry(Action.FALLBACK, Constants.TierSlug.LEAGUE_PRO, 1, 4, Constants.FederationSlug.ESPORTS_OCE),
+    ],
+  },
+  {
+    tierSlug: Constants.TierSlug.LEAGUE_PRO_PLAYOFFS,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: Constants.TierSlug.LEAGUE_PRO_PLAYOFFS,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
       {
         action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 0,
+        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+        target: Constants.TierSlug.LEAGUE_PRO,
+        federationSlug: Constants.FederationSlug.ESPORTS_WORLD,
+        start: 1,
         end: 16,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 0,
-        end: 16,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 0,
-        end: 8,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 0,
-        end: 8,
         season: 0,
       },
     ],
+  },
+  {
+    tierSlug: InvitationalTierSlug.IEM_KATOWICE_GROUP,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.IEM_KATOWICE_GROUP, 1, 16)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.IEM_KATOWICE_PLAYOFFS,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.IEM_KATOWICE_PLAYOFFS,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.IEM_KATOWICE_GROUP, 1, 8)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_OPEN_GROUP,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.BLAST_OPEN_GROUP, 1, 16)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_OPEN_PLAYOFFS,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_OPEN_PLAYOFFS,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.BLAST_OPEN_GROUP, 1, 8)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.PGL_CHAMPIONSHIP_GROUP,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.PGL_CHAMPIONSHIP_GROUP, 1, 16)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.PGL_CHAMPIONSHIP_PLAYOFFS,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.PGL_CHAMPIONSHIP_PLAYOFFS,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.PGL_CHAMPIONSHIP_GROUP, 1, 8)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_BOUNTY,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.BLAST_BOUNTY, 1, 8)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_RIVALS,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.BLAST_RIVALS, 1, 8)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP_GROUP,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.ESPORTS_WORLD_CUP_GROUP, 1, 16)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP_PLAYOFFS,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP_PLAYOFFS,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.ESPORTS_WORLD_CUP_GROUP, 1, 8)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_GROUP,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_GROUP, 1, 8, Constants.FederationSlug.ESPORTS_ASIA)],
+  },
+  {
+    tierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_PLAYOFFS,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_PLAYOFFS,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_GROUP, 1, 4, Constants.FederationSlug.ESPORTS_ASIA)],
   },
   {
     tierSlug: Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_1,
     on: Constants.CalendarEntry.SEASON_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 40,
-        season: 0,
-        excludeCountryCodes: ['CN'],
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 20,
-        season: 0,
-        excludeCountryCodes: ['CN'],
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 2,
-        season: 0,
-        excludeCountryCodes: ['CN'],
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 62,
-        season: -1,
-        excludeCountryCodes: ['CN'],
-      },
-    ],
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_1, Constants.FederationSlug.ESPORTS_ASIA, 1, 62, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
   },
   {
     tierSlug: Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_2,
     on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_2,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 3,
-        end: 62,
-        season: 0,
-      },
-    ],
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_2, Constants.FederationSlug.ESPORTS_ASIA, 1, 60, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
   },
   {
     tierSlug: Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_1,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [
       {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 40,
-        season: 0,
-        includeCountryCodes: ['CN'],
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 20,
-        season: 0,
-        includeCountryCodes: ['CN'],
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 2,
-        season: 0,
-        includeCountryCodes: ['CN'],
-      },
-      {
         action: Action.FALLBACK,
         from: Constants.LeagueSlug.ESPORTS_MAJOR,
         target: Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_1,
         federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 32,
-        season: -1,
         includeCountryCodes: ['CN'],
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_2,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_2,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 2,
+        start: 1,
         end: 32,
-        season: 0,
       },
     ],
   },
-
+  {
+    tierSlug: Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_2,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [
+      {
+        action: Action.FALLBACK,
+        from: Constants.LeagueSlug.ESPORTS_MAJOR,
+        target: Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_2,
+        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
+        includeCountryCodes: ['CN'],
+        start: 1,
+        end: 30,
+      },
+    ],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 102, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_2,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_2, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 98, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_AMERICAS_RMR,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_AMERICAS_RMR,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 8, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_2, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 8, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+    ],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1, Constants.FederationSlug.ESPORTS_EUROPA, 1, 94, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2, Constants.FederationSlug.ESPORTS_EUROPA, 1, 90, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_3,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_3, Constants.FederationSlug.ESPORTS_EUROPA, 1, 86, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_4,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_4, Constants.FederationSlug.ESPORTS_EUROPA, 1, 82, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_EUROPE_RMR_A,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_EUROPE_RMR_A,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1, Constants.FederationSlug.ESPORTS_EUROPA, 1, 8, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2, Constants.FederationSlug.ESPORTS_EUROPA, 1, 8, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+    ],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_EUROPE_RMR_B,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_EUROPE_RMR_B,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_3, Constants.FederationSlug.ESPORTS_EUROPA, 1, 8, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_4, Constants.FederationSlug.ESPORTS_EUROPA, 1, 8, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+    ],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_1,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_1, Constants.FederationSlug.ESPORTS_OCE, 1, 36, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
+  },
+  {
+    tierSlug: Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_2,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [regionalEntry(Action.FALLBACK, Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_2, Constants.FederationSlug.ESPORTS_OCE, 1, 35, undefined, Constants.LeagueSlug.ESPORTS_MAJOR)],
+  },
   {
     tierSlug: Constants.TierSlug.MAJOR_ASIA_RMR,
     on: Constants.CalendarEntry.SEASON_START,
@@ -933,31 +503,16 @@ export const Items: Array<Item> = [
     tierSlug: Constants.TierSlug.MAJOR_ASIA_RMR,
     on: Constants.CalendarEntry.COMPETITION_START,
     entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 2,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_2,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 2,
-        season: 0,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_1, Constants.FederationSlug.ESPORTS_ASIA, 1, 2, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_2, Constants.FederationSlug.ESPORTS_ASIA, 1, 2, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
       {
         action: Action.INCLUDE,
         from: Constants.LeagueSlug.ESPORTS_MAJOR,
         target: Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_1,
         federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
+        includeCountryCodes: ['CN'],
         start: 1,
-        end: 1,
+        end: 2,
         season: 0,
       },
       {
@@ -965,342 +520,15 @@ export const Items: Array<Item> = [
         from: Constants.LeagueSlug.ESPORTS_MAJOR,
         target: Constants.TierSlug.MAJOR_CHINA_OPEN_QUALIFIER_2,
         federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
+        includeCountryCodes: ['CN'],
         start: 1,
-        end: 1,
+        end: 2,
         season: 0,
       },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 1,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_2,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 1,
-        season: 0,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_1, Constants.FederationSlug.ESPORTS_OCE, 1, 1, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_2, Constants.FederationSlug.ESPORTS_OCE, 1, 1, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
     ],
   },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 102,
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_2,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_2,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 5,
-        end: 102,
-        season: 0,
-      },
-    ],
-  },
-
-  {
-    tierSlug: Constants.TierSlug.MAJOR_AMERICAS_RMR,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_AMERICAS_RMR,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_2,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_AMERICAS_RMR,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-      },
-    ],
-  },
-
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 94,
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 94,
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_3,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_3,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 94,
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_4,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_4,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_3,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 94,
-      },
-    ],
-  },
-
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_RMR_A,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_RMR_A,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_3,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_4,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_RMR_A,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_RMR_B,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_EUROPE_RMR_B,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_2,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_4,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.EXCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_3,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_RMR_B,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-      },
-    ],
-  },
-
   {
     tierSlug: Constants.TierSlug.MAJOR_CHALLENGERS_STAGE,
     on: Constants.CalendarEntry.SEASON_START,
@@ -1310,42 +538,10 @@ export const Items: Array<Item> = [
     tierSlug: Constants.TierSlug.MAJOR_CHALLENGERS_STAGE,
     on: Constants.CalendarEntry.COMPETITION_START,
     entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_ASIA_RMR,
-        federationSlug: Constants.FederationSlug.ESPORTS_ASIA,
-        start: 1,
-        end: 3,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_AMERICAS_RMR,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 2,
-        end: 5,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_RMR_A,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 5,
-        end: 8,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_RMR_B,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 4,
-        end: 8,
-        season: 0,
-      },
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_EUROPE_RMR_A, Constants.FederationSlug.ESPORTS_EUROPA, 1, 5, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_EUROPE_RMR_B, Constants.FederationSlug.ESPORTS_EUROPA, 1, 5, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_AMERICAS_RMR, Constants.FederationSlug.ESPORTS_AMERICAS, 1, 3, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
+      regionalEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_ASIA_RMR, Constants.FederationSlug.ESPORTS_ASIA, 1, 3, 0, Constants.LeagueSlug.ESPORTS_MAJOR),
     ],
   },
   {
@@ -1356,46 +552,8 @@ export const Items: Array<Item> = [
   {
     tierSlug: Constants.TierSlug.MAJOR_LEGENDS_STAGE,
     on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_CHALLENGERS_STAGE,
-        federationSlug: Constants.FederationSlug.ESPORTS_WORLD,
-        start: 1,
-        end: 8,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_AMERICAS_RMR,
-        federationSlug: Constants.FederationSlug.ESPORTS_AMERICAS,
-        start: 1,
-        end: 1,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_RMR_A,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 4,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_EUROPE_RMR_B,
-        federationSlug: Constants.FederationSlug.ESPORTS_EUROPA,
-        start: 1,
-        end: 3,
-        season: 0,
-      },
-    ],
+    entries: [worldEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_CHALLENGERS_STAGE, 1, 8)],
   },
-
   {
     tierSlug: Constants.TierSlug.MAJOR_CHAMPIONS_STAGE,
     on: Constants.CalendarEntry.SEASON_START,
@@ -1404,222 +562,60 @@ export const Items: Array<Item> = [
   {
     tierSlug: Constants.TierSlug.MAJOR_CHAMPIONS_STAGE,
     on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_LEGENDS_STAGE,
-        federationSlug: Constants.FederationSlug.ESPORTS_WORLD,
-        start: 1,
-        end: 8,
-        season: 0,
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_1,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_OPEN,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 20,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_ADVANCED,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 15,
-        season: 0,
-      },
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 1,
-        season: 0,
-      },
-      {
-        action: Action.FALLBACK,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 1,
-        end: 36,
-        season: -1,
-      },
-    ],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_2,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [],
-  },
-  {
-    tierSlug: Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_2,
-    on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_MAJOR,
-        target: Constants.TierSlug.MAJOR_OCE_OPEN_QUALIFIER_1,
-        federationSlug: Constants.FederationSlug.ESPORTS_OCE,
-        start: 2,
-        end: 36,
-        season: 0,
-      },
-    ],
+    entries: [worldEntry(Action.INCLUDE, Constants.TierSlug.MAJOR_LEGENDS_STAGE, 1, 8)],
   },
 ];
 
+function sliceRanked<T>(items: Array<T>, start: number, end?: number) {
+  return items.slice(start < 0 ? start : Math.max(0, start - 1), end || undefined);
+}
+
+function buildCountryFilter(entry: Entry): Prisma.CountryWhereInput | null {
+  const excludeCountryCodes = entry.excludeCountryCodes?.length
+    ? new Set(entry.excludeCountryCodes)
+    : null;
+  const includeCountryCodes = entry.includeCountryCodes?.length
+    ? new Set(entry.includeCountryCodes)
+    : null;
+
+  if (!includeCountryCodes && !excludeCountryCodes) {
+    return null;
+  }
+
+  return {
+    code: {
+      ...(includeCountryCodes ? { in: [...includeCountryCodes] } : {}),
+      ...(excludeCountryCodes ? { notIn: [...excludeCountryCodes] } : {}),
+    },
+  };
+}
 
 function buildCompetitionFederationWhere(
   federationSlug: Constants.FederationSlug,
   countryFilter?: Prisma.CountryWhereInput | null,
 ): Prisma.TeamWhereInput {
-  if (federationSlug === Constants.FederationSlug.ESPORTS_WORLD) {
-    return countryFilter ? { country: countryFilter } : {};
-  }
-
-  return {
-    OR: [
-      {
-        competitionFederation: {
-          is: {
-            slug: federationSlug,
-          },
-        },
-        ...(countryFilter ? { country: countryFilter } : {}),
-      },
-      {
-        competitionFederationId: null,
-        country: {
-          ...(countryFilter ? countryFilter : {}),
+  const countryWhere: Prisma.CountryWhereInput = {
+    ...(countryFilter || {}),
+    ...(federationSlug !== Constants.FederationSlug.ESPORTS_WORLD
+      ? {
           continent: {
             federation: {
               slug: federationSlug,
             },
           },
-        },
-      },
-    ],
+        }
+      : {}),
   };
-}
 
-async function getRegionalWorldLeaguePlacements(
-  entry: Entry,
-  federation: Prisma.FederationGetPayload<unknown>,
-): Promise<Array<Team>> {
-  const profile = await DatabaseClient.prisma.profile.findFirst();
-  const targetFederationSlug = (entry.federationSlug || federation.slug) as Constants.FederationSlug;
-  const season = profile.season + (entry.season || 0);
-
-  const [regularSeasonCompetition, playoffsCompetition] = await Promise.all([
-    DatabaseClient.prisma.competition.findFirst({
-      where: {
-        season,
-        tier: {
-          slug: Constants.TierSlug.LEAGUE_PRO,
-          league: {
-            slug: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-          },
-        },
-      },
-      include: {
-        competitors: {
-          orderBy: { position: 'asc' },
-          include: {
-            team: true,
-          },
-        },
-      },
-    }),
-    DatabaseClient.prisma.competition.findFirst({
-      where: {
-        season,
-        tier: {
-          slug: Constants.TierSlug.LEAGUE_PRO_PLAYOFFS,
-          league: {
-            slug: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-          },
-        },
-      },
-      include: {
-        competitors: {
-          orderBy: { position: 'asc' },
-          include: {
-            team: true,
-          },
-        },
-      },
-    }),
-  ]);
-
-  if (!regularSeasonCompetition) {
-    return [];
-  }
-
-  const playoffCompetitors: typeof regularSeasonCompetition.competitors = (
-    playoffsCompetition?.competitors ?? []
-  );
-  const allCompetitors = [
-    ...regularSeasonCompetition.competitors,
-    ...playoffCompetitors,
-  ];
-  const regionalTeams = await DatabaseClient.prisma.team.findMany({
-    where: {
-      id: {
-        in: [...new Set(allCompetitors.map((competitor) => competitor.teamId))],
-      },
-      ...buildCompetitionFederationWhere(targetFederationSlug),
-    },
-    select: {
-      id: true,
-    },
-  });
-  const regionalTeamIds = new Set(regionalTeams.map((team) => team.id));
-  const playoffTeamIds = new Set(
-    playoffCompetitors
-      .filter((competitor) => regionalTeamIds.has(competitor.teamId))
-      .map((competitor) => competitor.teamId),
-  );
-
-  const rankedCompetitors = [
-    ...playoffCompetitors.filter((competitor) =>
-      regionalTeamIds.has(competitor.teamId),
-    ),
-    ...regularSeasonCompetition.competitors.filter(
-      (competitor) =>
-        regionalTeamIds.has(competitor.teamId) && !playoffTeamIds.has(competitor.teamId),
-    ),
-  ];
-
-  return rankedCompetitors
-    .slice(entry.start < 0 ? entry.start : Math.max(0, entry.start - 1), entry.end || undefined)
-    .map((competitor) => competitor.team);
+  return Object.keys(countryWhere).length ? { country: countryWhere } : {};
 }
 
 async function getRegionalLeaguePlacements(
-  tierSlug: Constants.TierSlug,
+  tierSlug: string,
   federationSlug: Constants.FederationSlug,
   season: number,
 ): Promise<Array<Team>> {
-  const playoffTierByTier: Partial<Record<Constants.TierSlug, Constants.TierSlug>> = {
-    [Constants.TierSlug.LEAGUE_OPEN]: Constants.TierSlug.LEAGUE_OPEN_PLAYOFFS,
-    [Constants.TierSlug.LEAGUE_INTERMEDIATE]: Constants.TierSlug.LEAGUE_INTERMEDIATE_PLAYOFFS,
-    [Constants.TierSlug.LEAGUE_MAIN]: Constants.TierSlug.LEAGUE_MAIN_PLAYOFFS,
-    [Constants.TierSlug.LEAGUE_ADVANCED]: Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS,
-  };
-  const playoffTierSlug = playoffTierByTier[tierSlug];
-
+  const playoffTierSlug = REGIONAL_PLAYOFF_TIER_BY_TIER[tierSlug];
   const [regularSeasonCompetition, playoffsCompetition] = await Promise.all([
     DatabaseClient.prisma.competition.findFirst({
       where: {
@@ -1637,35 +633,31 @@ async function getRegionalLeaguePlacements(
       include: {
         competitors: {
           orderBy: { position: 'asc' },
-          include: {
-            team: true,
-          },
+          include: { team: true },
         },
       },
     }),
     playoffTierSlug
       ? DatabaseClient.prisma.competition.findFirst({
-        where: {
-          season,
-          federation: {
-            slug: federationSlug,
-          },
-          tier: {
-            slug: playoffTierSlug,
-            league: {
-              slug: Constants.LeagueSlug.ESPORTS_LEAGUE,
+          where: {
+            season,
+            federation: {
+              slug: federationSlug,
+            },
+            tier: {
+              slug: playoffTierSlug,
+              league: {
+                slug: Constants.LeagueSlug.ESPORTS_LEAGUE,
+              },
             },
           },
-        },
-        include: {
-          competitors: {
-            orderBy: { position: 'asc' },
-            include: {
-              team: true,
+          include: {
+            competitors: {
+              orderBy: { position: 'asc' },
+              include: { team: true },
             },
           },
-        },
-      })
+        })
       : Promise.resolve(null),
   ]);
 
@@ -1673,12 +665,8 @@ async function getRegionalLeaguePlacements(
     return [];
   }
 
-  const playoffCompetitors: typeof regularSeasonCompetition.competitors = (
-    playoffsCompetition?.competitors ?? []
-  );
-  const playoffTeamIds = new Set(
-    playoffCompetitors.map((competitor) => competitor.teamId),
-  );
+  const playoffCompetitors = playoffsCompetition?.competitors ?? [];
+  const playoffTeamIds = new Set(playoffCompetitors.map((competitor) => competitor.teamId));
 
   return [
     ...playoffCompetitors.map((competitor) => competitor.team),
@@ -1688,38 +676,102 @@ async function getRegionalLeaguePlacements(
   ];
 }
 
+async function getOccupiedRegionalTeamIds(federationSlug: Constants.FederationSlug) {
+  const profile = await DatabaseClient.prisma.profile.findFirst();
+  if (!profile) {
+    return new Set<number>();
+  }
+
+  const occupiedCompetitions = await DatabaseClient.prisma.competition.findMany({
+    where: {
+      season: profile.season,
+      federation: {
+        slug: federationSlug,
+      },
+      tier: {
+        league: {
+          slug: Constants.LeagueSlug.ESPORTS_LEAGUE,
+        },
+        slug: {
+          in: [...REGIONAL_LEAGUE_TIERS],
+        },
+      },
+    },
+    include: {
+      competitors: true,
+    },
+  });
+
+  return new Set(
+    flatten(
+      occupiedCompetitions.map((competition) =>
+        competition.competitors.map((competitor) => competitor.teamId),
+      ),
+    ),
+  );
+}
+
+async function getTopTeamsByElo(
+  federationSlug: Constants.FederationSlug,
+  start: number,
+  end?: number,
+  opts?: {
+    countryFilter?: Prisma.CountryWhereInput | null;
+    excludeIds?: Array<number>;
+    prestigeSlug?: string;
+    skip?: number;
+    alternate?: 'even' | 'odd';
+  },
+): Promise<Array<Team>> {
+  const prestigeIndex = opts?.prestigeSlug
+    ? Constants.Prestige.findIndex((prestige) => prestige === opts.prestigeSlug)
+    : -1;
+  const teams = await DatabaseClient.prisma.team.findMany({
+    where: {
+      ...(prestigeIndex >= 0 ? { prestige: prestigeIndex } : {}),
+      ...(opts?.excludeIds?.length
+        ? {
+            id: {
+              notIn: opts.excludeIds,
+            },
+          }
+        : {}),
+      ...buildCompetitionFederationWhere(federationSlug, opts?.countryFilter),
+    },
+    orderBy: {
+      elo: 'desc',
+    },
+  });
+
+  let rankedTeams = teams;
+
+  if (opts?.skip) {
+    rankedTeams = rankedTeams.slice(opts.skip);
+  }
+
+  if (opts?.alternate === 'even') {
+    rankedTeams = rankedTeams.filter((_, idx) => idx % 2 === 0);
+  }
+
+  if (opts?.alternate === 'odd') {
+    rankedTeams = rankedTeams.filter((_, idx) => idx % 2 === 1);
+  }
+
+  return sliceRanked(rankedTeams, start, end);
+}
+
 async function getTeamsFromCompetitionEntry(
   entry: Entry,
   federation: Prisma.FederationGetPayload<unknown>,
 ): Promise<Array<Team>> {
-  const excludeCountryCodes = entry.excludeCountryCodes?.length
-    ? new Set(entry.excludeCountryCodes)
-    : null;
-  const includeCountryCodes = entry.includeCountryCodes?.length
-    ? new Set(entry.includeCountryCodes)
-    : null;
-  const countryFilter =
-    includeCountryCodes || excludeCountryCodes
-      ? {
-        code: {
-          ...(includeCountryCodes ? { in: [...includeCountryCodes] } : {}),
-          ...(excludeCountryCodes ? { notIn: [...excludeCountryCodes] } : {}),
-        },
-      }
-      : null;
-
   const profile = await DatabaseClient.prisma.profile.findFirst();
-  const isWorldLeagueEntry = entry.from === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE;
-  const targetFederationSlug = (entry.federationSlug || federation.slug) as Constants.FederationSlug;
-
-  if (
-    isWorldLeagueEntry &&
-    entry.target === Constants.TierSlug.LEAGUE_PRO &&
-    entry.season === -1 &&
-    entry.federationSlug
-  ) {
-    return getRegionalWorldLeaguePlacements(entry, federation);
+  if (!profile) {
+    return [];
   }
+
+  const countryFilter = buildCountryFilter(entry);
+  const targetFederationSlug = (entry.federationSlug || federation.slug) as Constants.FederationSlug;
+  const isWorldCircuitEntry = entry.from === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE;
 
   const competition = await DatabaseClient.prisma.competition.findFirst({
     where: {
@@ -1730,13 +782,13 @@ async function getTeamsFromCompetitionEntry(
           slug: entry.from,
         },
       },
-      ...(isWorldLeagueEntry
+      ...(isWorldCircuitEntry
         ? {}
         : {
-          federation: {
-            slug: targetFederationSlug,
-          },
-        }),
+            federation: {
+              slug: targetFederationSlug,
+            },
+          }),
     },
     include: {
       competitors: {
@@ -1749,68 +801,29 @@ async function getTeamsFromCompetitionEntry(
   });
 
   if (!competition) {
-    return Promise.resolve([]);
+    return [];
   }
 
-  if (isWorldLeagueEntry && entry.federationSlug) {
-    const teamIds = competition.competitors.map((competitor) => competitor.teamId);
-    const regionTeams = await DatabaseClient.prisma.team.findMany({
-      where: {
-        id: {
-          in: teamIds,
-        },
-        ...buildCompetitionFederationWhere(
-          entry.federationSlug,
-          countryFilter,
-        ),
-      },
-      select: {
-        id: true,
-      },
-    });
-    const regionTeamIds = new Set(regionTeams.map((team) => team.id));
-    const regionCompetitors = competition.competitors.filter((competitor) =>
-      regionTeamIds.has(competitor.teamId),
-    );
-    const slicedCompetitors = regionCompetitors.slice(
-      entry.start < 0 ? entry.start : Math.max(0, entry.start - 1),
-      entry.end || undefined,
-    );
-    return Promise.resolve(slicedCompetitors.map((competitor) => competitor.team));
-  }
-
-  let competitors = competition.competitors;
-  const federationFilteredTeams = await DatabaseClient.prisma.team.findMany({
+  const regionTeams = await DatabaseClient.prisma.team.findMany({
     where: {
       id: {
-        in: competitors.map((competitor) => competitor.teamId),
+        in: competition.competitors.map((competitor) => competitor.teamId),
       },
-      ...buildCompetitionFederationWhere(
-        targetFederationSlug,
-        countryFilter,
-      ),
+      ...buildCompetitionFederationWhere(targetFederationSlug, countryFilter),
     },
     select: {
       id: true,
     },
   });
-  const federationIncludedIds = new Set(federationFilteredTeams.map((team) => team.id));
-  competitors = competitors.filter((competitor) => federationIncludedIds.has(competitor.teamId));
+  const regionTeamIds = new Set(regionTeams.map((team) => team.id));
 
-  competitors = competitors.slice(
-    entry.start < 0 ? entry.start : Math.max(0, entry.start - 1),
-    entry.end || undefined,
-  );
-  return Promise.resolve(competitors.map((competitor) => competitor.team));
+  return sliceRanked(
+    competition.competitors.filter((competitor) => regionTeamIds.has(competitor.teamId)),
+    Number(entry.start),
+    entry.end ? Number(entry.end) : undefined,
+  ).map((competitor) => competitor.team);
 }
 
-/**
- * Include only teams that meet the specific criteria.
- *
- * @param entry       The autofill entry.
- * @param federation  Federation database record.
- * @function
- */
 async function handleIncludeAction(
   entry: Entry,
   federation: Prisma.FederationGetPayload<unknown>,
@@ -1818,12 +831,6 @@ async function handleIncludeAction(
   return getTeamsFromCompetitionEntry(entry, federation);
 }
 
-/**
- * Do not consider teams that meet the criteria.
- *
- * @param entry The autofill entry.
- * @function
- */
 async function handleExcludeAction(
   entry: Entry,
   federation: Prisma.FederationGetPayload<unknown>,
@@ -1831,225 +838,107 @@ async function handleExcludeAction(
   return getTeamsFromCompetitionEntry(entry, federation);
 }
 
-/**
- * An include action that is used to backfill the teams list.
- *
- * @param entry       The autofill entry.
- * @param tier        Tier database record.
- * @param federation  Federation database record.
- * @function
- */
 async function handleFallbackAction(
   entry: Entry,
   tier: Prisma.TierGetPayload<typeof Eagers.tier>,
   federation: Prisma.FederationGetPayload<unknown>,
 ) {
-  const excludeCountryCodes = entry.excludeCountryCodes?.length
-    ? new Set(entry.excludeCountryCodes)
-    : null;
-  const includeCountryCodes = entry.includeCountryCodes?.length
-    ? new Set(entry.includeCountryCodes)
-    : null;
-  const countryFilter =
-    includeCountryCodes || excludeCountryCodes
-      ? {
-        code: {
-          ...(includeCountryCodes ? { in: [...includeCountryCodes] } : {}),
-          ...(excludeCountryCodes ? { notIn: [...excludeCountryCodes] } : {}),
-        },
-      }
-      : null;
   const targetFederationSlug = (entry.federationSlug || federation.slug) as Constants.FederationSlug;
-  const regularLeagueTiers = new Set<Constants.TierSlug>([
-    Constants.TierSlug.LEAGUE_OPEN,
-    Constants.TierSlug.LEAGUE_INTERMEDIATE,
-    Constants.TierSlug.LEAGUE_MAIN,
-    Constants.TierSlug.LEAGUE_ADVANCED,
-  ]);
+  const countryFilter = buildCountryFilter(entry);
 
   if (
-    regularLeagueTiers.has(entry.target) &&
+    REGIONAL_LEAGUE_TIERS.has(entry.target) &&
     tier.league.slug === Constants.LeagueSlug.ESPORTS_LEAGUE
   ) {
     const profile = await DatabaseClient.prisma.profile.findFirst();
-    const previousPlacements = await getRegionalLeaguePlacements(
-      entry.target,
-      targetFederationSlug,
-      profile.season - 1,
-    );
-
-    if (previousPlacements.length) {
-      const occupiedCompetitions = await DatabaseClient.prisma.competition.findMany({
-        where: {
-          season: profile.season,
-          federation: {
-            slug: targetFederationSlug,
-          },
-          tier: {
-            league: {
-              slug: Constants.LeagueSlug.ESPORTS_LEAGUE,
-            },
-            slug: {
-              in: [...regularLeagueTiers],
-            },
-          },
-        },
-        include: {
-          competitors: true,
-        },
-      });
-      const occupiedIds = new Set(
-        flatten(
-          occupiedCompetitions.map((competition) =>
-            competition.competitors.map((competitor) => competitor.teamId),
-          ),
-        ),
+    if (profile) {
+      const previousPlacements = await getRegionalLeaguePlacements(
+        entry.target,
+        targetFederationSlug,
+        profile.season - 1,
       );
 
-      return previousPlacements
-        .filter((team) => !occupiedIds.has(team.id))
-        .slice(Math.max(0, entry.start - 1), entry.end || undefined);
+      if (previousPlacements.length) {
+        const occupiedIds = await getOccupiedRegionalTeamIds(targetFederationSlug);
+        return sliceRanked(
+          previousPlacements.filter((team) => !occupiedIds.has(team.id)),
+          Number(entry.start),
+          entry.end ? Number(entry.end) : undefined,
+        );
+      }
     }
+
+    const occupiedIds = [...(await getOccupiedRegionalTeamIds(targetFederationSlug))];
+    return getTopTeamsByElo(
+      targetFederationSlug,
+      Number(entry.start),
+      entry.end ? Number(entry.end) : undefined,
+      {
+        countryFilter,
+        excludeIds: occupiedIds,
+        prestigeSlug: entry.target,
+      },
+    );
   }
 
   if (entry.target === Constants.TierSlug.MAJOR_AMERICAS_OPEN_QUALIFIER_1) {
-    const teams = await DatabaseClient.prisma.team.findMany({
-      where: {
-        ...buildCompetitionFederationWhere(
-          Constants.FederationSlug.ESPORTS_AMERICAS,
-          countryFilter,
-        ),
-      },
-      orderBy: {
-        elo: 'desc',
-      },
-    });
-
-    const qualifierPool = teams.slice(8);
-    return qualifierPool.slice(Math.max(0, entry.start - 1), entry.end || undefined);
+    return getTopTeamsByElo(
+      Constants.FederationSlug.ESPORTS_AMERICAS,
+      Number(entry.start),
+      entry.end ? Number(entry.end) : undefined,
+      { countryFilter, skip: 8 },
+    );
   }
 
   if (entry.target === Constants.TierSlug.MAJOR_EUROPE_OPEN_QUALIFIER_1) {
-    const teams = await DatabaseClient.prisma.team.findMany({
-      where: {
-        ...buildCompetitionFederationWhere(
-          Constants.FederationSlug.ESPORTS_EUROPA,
-          countryFilter,
-        ),
-      },
-      orderBy: {
-        elo: 'desc',
-      },
-    });
-
-    const qualifierPool = teams.slice(16);
-    return qualifierPool.slice(Math.max(0, entry.start - 1), entry.end || undefined);
+    return getTopTeamsByElo(
+      Constants.FederationSlug.ESPORTS_EUROPA,
+      Number(entry.start),
+      entry.end ? Number(entry.end) : undefined,
+      { countryFilter, skip: 16 },
+    );
   }
-
-  if (entry.target === Constants.TierSlug.MAJOR_AMERICAS_RMR) {
-    const teams = await DatabaseClient.prisma.team.findMany({
-      where: {
-        ...buildCompetitionFederationWhere(
-          Constants.FederationSlug.ESPORTS_AMERICAS,
-          countryFilter,
-        ),
-      },
-      orderBy: {
-        elo: 'desc',
-      },
-    });
-
-    return teams.slice(Math.max(0, entry.start - 1), entry.end || undefined);
-  }
-
 
   if (entry.target === Constants.TierSlug.MAJOR_EUROPE_RMR_A) {
-    const teams = await DatabaseClient.prisma.team.findMany({
-      where: {
-        ...buildCompetitionFederationWhere(
-          Constants.FederationSlug.ESPORTS_EUROPA,
-          countryFilter,
-        ),
-      },
-      orderBy: {
-        elo: 'desc',
-      },
-    });
-
-    return teams
-      .filter((_, idx) => idx % 2 === 0)
-      .slice(Math.max(0, entry.start - 1), entry.end || undefined);
+    return getTopTeamsByElo(
+      Constants.FederationSlug.ESPORTS_EUROPA,
+      Number(entry.start),
+      entry.end ? Number(entry.end) : undefined,
+      { countryFilter, alternate: 'even' },
+    );
   }
 
   if (entry.target === Constants.TierSlug.MAJOR_EUROPE_RMR_B) {
-    const teams = await DatabaseClient.prisma.team.findMany({
-      where: {
-        ...buildCompetitionFederationWhere(
-          Constants.FederationSlug.ESPORTS_EUROPA,
-          countryFilter,
-        ),
-      },
-      orderBy: {
-        elo: 'desc',
-      },
-    });
-
-    return teams
-      .filter((_, idx) => idx % 2 === 1)
-      .slice(Math.max(0, entry.start - 1), entry.end || undefined);
-  }
-
-  if (entry.target === Constants.TierSlug.LEAGUE_PRO) {
-    const profile = await DatabaseClient.prisma.profile.findFirst();
-    const occupied = await DatabaseClient.prisma.competition.findMany({
-      where: {
-        season: profile.season,
-        tier: {
-          league: {
-            slug: {
-              not: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-            },
-          },
-        },
-      },
-      include: {
-        competitors: true,
-      },
-    });
-    const occupiedIds = new Set(
-      flatten(occupied.map((competition) => competition.competitors.map((comp) => comp.teamId))),
+    return getTopTeamsByElo(
+      Constants.FederationSlug.ESPORTS_EUROPA,
+      Number(entry.start),
+      entry.end ? Number(entry.end) : undefined,
+      { countryFilter, alternate: 'odd' },
     );
-
-    const teams = await DatabaseClient.prisma.team.findMany({
-      where: {
-        prestige: Constants.Prestige.findIndex(
-          (prestige) => prestige === Constants.TierSlug.LEAGUE_PRO,
-        ),
-        id: {
-          notIn: [...occupiedIds],
-        },
-        ...buildCompetitionFederationWhere(
-          targetFederationSlug,
-          countryFilter,
-        ),
-      },
-      orderBy: {
-        prestige: 'desc',
-      },
-    });
-
-    return teams.slice(Math.max(0, entry.start - 1), entry.end || undefined);
   }
 
-  const teams = await DatabaseClient.prisma.team.findMany({
-    where: {
-      prestige: Constants.Prestige.findIndex((prestige) => prestige === entry.target),
-      ...buildCompetitionFederationWhere(
-        targetFederationSlug,
-        countryFilter,
-      ),
+  if (
+    entry.target === Constants.TierSlug.LEAGUE_PRO ||
+    CUSTOM_INVITATIONAL_TIERS.has(entry.target) ||
+    entry.from === Constants.LeagueSlug.ESPORTS_MAJOR
+  ) {
+    return getTopTeamsByElo(
+      targetFederationSlug,
+      Number(entry.start),
+      entry.end ? Number(entry.end) : undefined,
+      { countryFilter },
+    );
+  }
+
+  const teams = await getTopTeamsByElo(
+    targetFederationSlug,
+    Number(entry.start),
+    entry.end ? Number(entry.end) : undefined,
+    {
+      countryFilter,
+      prestigeSlug: entry.target,
     },
-  });
+  );
 
   if (!teams.length) {
     log.warn(
@@ -2060,7 +949,7 @@ async function handleFallbackAction(
     );
   }
 
-  return teams.slice(Math.max(0, entry.start - 1), entry.end || undefined);
+  return teams;
 }
 
 /**
@@ -2085,7 +974,6 @@ export async function parse(
         )
       : tier.size;
 
-  // fill competitors list using this autofill item's entries
   const competitors = [] as Array<Team>;
   const allowsCrossFederationEntries =
     item.tierSlug === Constants.TierSlug.MAJOR_ASIA_RMR &&
@@ -2097,7 +985,6 @@ export async function parse(
     entry.federationSlug === federation.slug;
   const eligibleEntries = item.entries.filter(entryMatchesFederation);
 
-  // collect competitors
   const includeList = await Promise.all(
     flatten(
       eligibleEntries
@@ -2106,134 +993,118 @@ export async function parse(
     ),
   );
 
-  // exclude undesirables
   const excludeList = await Promise.all(
     flatten(
-      eligibleEntries.filter((entry) => entry.action === Action.EXCLUDE)
+      eligibleEntries
+        .filter((entry) => entry.action === Action.EXCLUDE)
         .map((entry) => handleExcludeAction(entry, federation)),
     ),
   );
 
   let excludedCompetitors = flatten(excludeList);
 
-  // Guardrail: a team can only be in one regular regional league division
-  // (open/intermediate/main/advanced) per season + federation.
-  const regularLeagueDivisionTiers = new Set([
-    Constants.TierSlug.LEAGUE_OPEN,
-    Constants.TierSlug.LEAGUE_INTERMEDIATE,
-    Constants.TierSlug.LEAGUE_MAIN,
-    Constants.TierSlug.LEAGUE_ADVANCED,
-  ]);
-
   if (
     item.on === Constants.CalendarEntry.SEASON_START &&
     tier.league.slug === Constants.LeagueSlug.ESPORTS_LEAGUE &&
     federation.slug !== Constants.FederationSlug.ESPORTS_WORLD &&
-    regularLeagueDivisionTiers.has(item.tierSlug)
+    REGIONAL_LEAGUE_TIERS.has(item.tierSlug)
   ) {
     const profile = await DatabaseClient.prisma.profile.findFirst();
-    const occupied = await DatabaseClient.prisma.competition.findMany({
-      where: {
-        season: profile.season,
-        federation: { slug: federation.slug },
-        tier: {
-          league: { slug: Constants.LeagueSlug.ESPORTS_LEAGUE },
-          slug: {
-            in: [...regularLeagueDivisionTiers],
+    if (profile) {
+      const occupied = await DatabaseClient.prisma.competition.findMany({
+        where: {
+          season: profile.season,
+          federation: { slug: federation.slug },
+          tier: {
+            league: { slug: Constants.LeagueSlug.ESPORTS_LEAGUE },
+            slug: { in: [...REGIONAL_LEAGUE_TIERS] },
           },
         },
-      },
-      include: {
-        competitors: {
-          include: {
-            team: true,
+        include: {
+          competitors: {
+            include: {
+              team: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    const occupiedTeams = flatten(
-      occupied.map((competition) => competition.competitors.map((competitor) => competitor.team)),
-    );
-
-    excludedCompetitors = [...excludedCompetitors, ...occupiedTeams];
+      const occupiedTeams = flatten(
+        occupied.map((competition) => competition.competitors.map((competitor) => competitor.team)),
+      );
+      excludedCompetitors = [...excludedCompetitors, ...occupiedTeams];
+    }
   }
 
-  // create unique list of competitors by
-  // filtering out the excludes
   competitors.push(...differenceBy(flatten(includeList), excludedCompetitors, 'id'));
 
   if (tier.league.slug === Constants.LeagueSlug.ESPORTS_LEAGUE) {
     const profile = await DatabaseClient.prisma.profile.findFirst();
-    const eplCompetition = await DatabaseClient.prisma.competition.findFirst({
-      where: {
-        season: profile.season,
-        tier: {
-          league: {
-            slug: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+    if (profile) {
+      const eplCompetition = await DatabaseClient.prisma.competition.findFirst({
+        where: {
+          season: profile.season,
+          tier: {
+            slug: Constants.TierSlug.LEAGUE_PRO,
+            league: {
+              slug: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+            },
           },
         },
-      },
-      include: {
-        competitors: {
-          include: {
-            team: true,
+        include: {
+          competitors: {
+            include: {
+              team: true,
+            },
           },
         },
-      },
-    });
+      });
 
-    // Keep EPL teams out of regional league divisions across the full
-    // parse flow (initial includes + fallbacks + reserve backfill).
-    if (eplCompetition) {
-      excludedCompetitors = [
-        ...excludedCompetitors,
-        ...eplCompetition.competitors.map((competitor) => competitor.team),
-      ];
-      competitors.splice(
-        0,
-        competitors.length,
-        ...competitors.filter((team) =>
-          !eplCompetition.competitors.some((competitor) => competitor.teamId === team.id)
-        ),
-      );
+      if (eplCompetition) {
+        excludedCompetitors = [
+          ...excludedCompetitors,
+          ...eplCompetition.competitors.map((competitor) => competitor.team),
+        ];
+        competitors.splice(
+          0,
+          competitors.length,
+          ...competitors.filter(
+            (team) =>
+              !eplCompetition.competitors.some((competitor) => competitor.teamId === team.id),
+          ),
+        );
+      }
     }
   }
 
-  // if the required quota for the current tier is not met then
-  // use the fallback entries to backfill the competitors list
-  const quota = item.entries
-    .filter(entryMatchesFederation)
+  const quota = eligibleEntries
     .filter((entry) => entry.action === Action.INCLUDE)
     .map((entry) =>
       entry.start < 0
-        ? Math.abs(entry.start)
-        : (entry.end || tierSize) - Math.max(0, entry.start - 1),
+        ? Math.abs(Number(entry.start))
+        : (Number(entry.end || tierSize) - Math.max(0, Number(entry.start) - 1)),
     )
     .reduce((a, b) => a + b, 0);
 
   const requiredCount =
-    item.tierSlug === Constants.TierSlug.LEAGUE_PRO ? quota : Math.max(quota, tierSize);
+    item.tierSlug === Constants.TierSlug.LEAGUE_PRO ? quota || tierSize : Math.max(quota, tierSize);
 
   if (!requiredCount || competitors.length < requiredCount) {
-    let fallbackList: Awaited<ReturnType<typeof handleIncludeAction>>;
+    let fallbackList: Array<Team> = [];
 
-    // use the standard include action logic if the
-    // fallback entry contains a season property
     fallbackList = flatten(
       await Promise.all(
         eligibleEntries
-          .filter((entry) => entry.action === Action.FALLBACK && 'season' in entry)
+          .filter((entry) => entry.action === Action.FALLBACK && typeof entry.season === 'number')
           .map((entry) => handleIncludeAction(entry, federation)),
       ),
     );
 
-    // if that still doesn't meet the quota, then use the default fallback
     if (!fallbackList.length || fallbackList.length < requiredCount - competitors.length) {
       fallbackList = flatten(
         await Promise.all(
           eligibleEntries
-            .filter((entry) => entry.action === Action.FALLBACK && !entry.season)
+            .filter((entry) => entry.action === Action.FALLBACK && typeof entry.season !== 'number')
             .map((entry) => handleFallbackAction(entry, tier, federation)),
         ),
       );
@@ -2244,14 +1115,11 @@ export async function parse(
     );
   }
 
-  // Last-resort anti-shrink backfill for regular league divisions.
-  // If configured sources/fallbacks are exhausted, fill remaining slots
-  // from any unassigned teams in the federation to preserve division size.
   if (
     item.on === Constants.CalendarEntry.SEASON_START &&
     tier.league.slug === Constants.LeagueSlug.ESPORTS_LEAGUE &&
     federation.slug !== Constants.FederationSlug.ESPORTS_WORLD &&
-    regularLeagueDivisionTiers.has(item.tierSlug) &&
+    REGIONAL_LEAGUE_TIERS.has(item.tierSlug) &&
     competitors.length < tierSize
   ) {
     const reservePool = await DatabaseClient.prisma.team.findMany({
@@ -2259,9 +1127,7 @@ export async function parse(
         id: {
           notIn: [...new Set([...competitors, ...excludedCompetitors].map((team) => team.id))],
         },
-        ...buildCompetitionFederationWhere(
-          federation.slug as Constants.FederationSlug,
-        ),
+        ...buildCompetitionFederationWhere(federation.slug as Constants.FederationSlug),
       },
       orderBy: {
         elo: 'desc',
@@ -2278,6 +1144,5 @@ export async function parse(
     competitors.slice(0, tierSize).length,
   );
 
-  // return our payload
   return Promise.resolve(competitors.slice(0, tierSize));
 }
