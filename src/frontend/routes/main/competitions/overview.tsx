@@ -119,6 +119,10 @@ export default function () {
     [competition],
   );
 
+  const competitionTierLabel = React.useMemo(
+    () => Util.getCompetitionTierName(competition.tier),
+    [competition],
+  );
   const isSwiss = Boolean(
     Constants.TierSwissConfig[competition.tier.slug as Constants.TierSlug],
   );
@@ -146,7 +150,7 @@ export default function () {
             <tbody>
               <tr>
                 <td colSpan={2}>
-                  {`${Constants.IdiomaticTier[competition.tier.slug]} · ${competition.federation.name}`}
+                  {`${competition.tier.league.name} · ${competitionTierLabel} · ${competition.federation.name}`}
                 </td>
               </tr>
             </tbody>
@@ -366,7 +370,7 @@ export default function () {
               </option>
             )}
             {competition.tier.league.slug === Constants.LeagueSlug.ESPORTS_LEAGUE ? (
-              <option>{Constants.IdiomaticTier[competition.tier.slug]}</option>
+              <option>{competitionTierLabel}</option>
             ) : (
               Object.keys(groupBy(competition.competitors, 'group')).map((groupKey) => (
                 <option key={groupKey + '__select'} value={groupKey}>
