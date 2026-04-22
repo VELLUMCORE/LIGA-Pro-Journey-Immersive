@@ -53,7 +53,11 @@ export default function () {
   const { state } = React.useContext(AppStateContext);
   const [current, setCurrent] = React.useState(state.profile?.date || new Date());
   const [spotlight, setSpotlight] = React.useState<MatchesResponse[number]>();
+  const [appInfo, setAppInfo] = React.useState<{ isDev?: boolean } | null>(null);
+  const [debugTimeValue, setDebugTimeValue] = React.useState('12:00');
   const today = React.useMemo(() => state.profile?.date || new Date(), [state.profile]);
+  const settings = React.useMemo(() => Util.loadSettings(state.profile?.settings), [state.profile?.settings]);
+  const debugEnabled = Boolean(appInfo?.isDev && (settings.general as any).debug);
 
   // start and end of the month
   const start = React.useMemo(() => startOfMonth(current), [current]);
@@ -95,6 +99,10 @@ export default function () {
   // grab the match data for the current month
   const [matches, setMatches] = React.useState<MatchesResponse>([]);
   const [worldMatches, setWorldMatches] = React.useState<MatchesResponse>([]);
+
+  React.useEffect(() => {
+    api.app.info().then((info: any) => setAppInfo(info)).catch(() => setAppInfo(null));
+  }, []);
 
   React.useEffect(() => {
     api.matches
@@ -145,11 +153,31 @@ export default function () {
     setSpotlight(matchday);
   }, [matches]);
 
+  React.useEffect(() => {
+    const source = spotlight || matches.find((match) => isSameDay(match.date, current));
+    const nextDate = source?.date ? new Date(source.date) : current;
+    setDebugTimeValue(format(nextDate, 'HH:mm'));
+  }, [spotlight, matches, current]);
+
   const selectedDate = spotlight?.date || current;
   const matchesOnSelectedDay = React.useMemo(
     () => worldMatches.filter((match) => isSameDay(match.date, selectedDate)),
     [worldMatches, selectedDate],
   );
+
+  const spotlightIsUserUpcoming = Boolean(
+    spotlight &&
+      spotlight.status !== Constants.MatchStatus.COMPLETED &&
+      spotlight.competitors.some((competitor) => competitor.teamId === state.profile?.teamId),
+  );
+
+  const applyReschedule = async () => {
+    if (!spotlight) return;
+    const updated = await api.debug.rescheduleMatch(spotlight.id, debugTimeValue);
+    setSpotlight(updated as MatchesResponse[number]);
+    setMatches((prev) => prev.map((match) => (match.id === spotlight.id ? (updated as MatchesResponse[number]) : match)));
+    setWorldMatches((prev) => prev.map((match) => (match.id === spotlight.id ? (updated as MatchesResponse[number]) : match)));
+  };
 
   return (
     <div className="dashboard">
@@ -278,6 +306,20 @@ export default function () {
                       {t('shared.viewMatchDetails')}
                     </button>
                   </aside>
+                  {debugEnabled && spotlightIsUserUpcoming && (
+                    <aside className="stack-x items-center gap-2 px-2 py-2">
+                      <span className="text-xs uppercase tracking-wide opacity-70">Developer Debug</span>
+                      <input
+                        type="time"
+                        className="input input-sm max-w-40"
+                        value={debugTimeValue}
+                        onChange={(event) => setDebugTimeValue(event.target.value)}
+                      />
+                      <button type="button" className="btn btn-sm" onClick={() => void applyReschedule()}>
+                        Apply start time
+                      </button>
+                    </aside>
+                  )}
                   <aside className="stack-y px-2 pb-2">
                     <h4 className="text-sm font-semibold">All fixtures on this date</h4>
                     {matchesOnSelectedDay.map((fixture) => {
