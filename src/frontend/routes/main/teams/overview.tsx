@@ -191,7 +191,7 @@ export default function () {
                   {!!group.length && !isProLeagueStage && (
                     <span>{Util.toOrdinalSuffix(userTeam?.position)} in&nbsp;</span>
                   )}
-                  {getTeamsTierLabel(competition.tier.slug, competition.tier.league.name)}
+                  {getTeamsTierLabel(competition.tier.slug, competition.tier.league.name, competition.tier.name)}
                 </td>
               </tr>
             </tbody>
@@ -281,11 +281,11 @@ export default function () {
                   const tierLabel = getTeamsTierLabel(
                     match.competition.tier.slug,
                     match.competition.tier.league?.name,
+                    match.competition.tier.name,
                   );
-                  const competitionLabel =
-                    match.competition.tier.league.slug === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE
-                      ? tierLabel
-                      : `${match.competition.tier.league.name}: ${tierLabel}`;
+                  const competitionLabel = tierLabel === match.competition.tier.league.name
+                    ? tierLabel
+                    : `${match.competition.tier.league.name}: ${tierLabel}`;
 
                   return (
                     <tr
@@ -441,7 +441,7 @@ export default function () {
           )}
           value={
             group.length
-              ? getTeamsTierLabel(competition.tier.slug, competition.tier.league?.name)
+              ? getTeamsTierLabel(competition.tier.slug, competition.tier.league?.name, competition.tier.name)
               : -1
           }
         >
@@ -453,9 +453,9 @@ export default function () {
           {!!group.length && (
             <option
               disabled
-              value={getTeamsTierLabel(competition.tier.slug, competition.tier.league?.name)}
+              value={getTeamsTierLabel(competition.tier.slug, competition.tier.league?.name, competition.tier.name)}
             >
-              {getTeamsTierLabel(competition.tier.slug, competition.tier.league?.name)}
+              {getTeamsTierLabel(competition.tier.slug, competition.tier.league?.name, competition.tier.name)}
             </option>
           )}
         </select>
