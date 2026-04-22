@@ -743,8 +743,6 @@ export default function registerFaceitHandlers() {
     const style = payload?.style || 'DEFAULT';
     const roomBase = await FaceitMatchmaker.createMatchRoom(prisma, {
       id: profile.player.id,
-      name: profile.player.name,
-      elo: profile.faceitElo,
       queueElo: profile.faceitElo,
       maxPartyEloDelta: 0,
     });
@@ -827,7 +825,9 @@ export default function registerFaceitHandlers() {
     });
 
     const events = createSyntheticEvents(room, profile.playerId, outcome, style, createdMatch.games[0].id, createdMatch.id);
-    await prisma.matchEvent.createMany({ data: events });
+    for (const event of events) {
+      await prisma.matchEvent.create({ data: event as any });
+    }
 
     const updatedProfile = await prisma.profile.update({
       where: { id: profile.id },
@@ -891,8 +891,6 @@ export default function registerFaceitHandlers() {
 
       const user = {
         id: profile.player.id,
-        name: profile.player.name,
-        elo: profile.faceitElo,
         queueElo,
         maxPartyEloDelta,
       };
