@@ -32,6 +32,48 @@ async function ensureDeveloperDebugProfile() {
   return profile;
 }
 
+async function ensureFallbackSourceTeam() {
+  const existingNoTeam = await DatabaseClient.prisma.team.findFirst({
+    where: {
+      OR: [
+        { slug: 'no-team' },
+        { name: 'No Team' },
+      ],
+    },
+  });
+
+  if (existingNoTeam) {
+    return existingNoTeam;
+  }
+
+  const fallbackCountry =
+    (await DatabaseClient.prisma.country.findFirst({ orderBy: { id: 'asc' } })) ||
+    (await DatabaseClient.prisma.country.create({
+      data: {
+        name: 'Nowhere',
+        code: 'NW',
+        continent: {
+          connect: {
+            id: 1,
+          },
+        },
+      },
+    }).catch(async () => DatabaseClient.prisma.country.findFirst({ orderBy: { id: 'asc' } })));
+
+  if (!fallbackCountry) {
+    throw new Error('SOURCE_TEAM_NOT_FOUND');
+  }
+
+  return DatabaseClient.prisma.team.create({
+    data: {
+      name: 'No Team',
+      slug: `no-team-${Date.now()}`,
+      countryId: fallbackCountry.id,
+      elo: 1000,
+    },
+  });
+}
+
 export default function registerProfileHandlers() {
   ipcMain.handle(
     "profiles:createPlayerCareer",
@@ -143,24 +185,18 @@ export default function registerProfileHandlers() {
       throw new Error('TEAM_NOT_FOUND');
     }
 
-    const noTeam = await DatabaseClient.prisma.team.findFirst({
-      where: {
-        OR: [
-          { slug: 'no-team' },
-          { name: 'No Team' },
-        ],
-      },
-    });
+    const sourceTeam = profile.teamId
+      ? await DatabaseClient.prisma.team.findFirst({ where: { id: profile.teamId } })
+      : await ensureFallbackSourceTeam();
 
-    const fromTeamId = profile.teamId ?? noTeam?.id;
-    if (!fromTeamId) {
+    if (!sourceTeam?.id) {
       throw new Error('SOURCE_TEAM_NOT_FOUND');
     }
 
     const transfer = await DatabaseClient.prisma.transfer.create({
       data: {
         status: Constants.TransferStatus.PLAYER_PENDING,
-        teamIdFrom: fromTeamId,
+        teamIdFrom: sourceTeam.id,
         teamIdTo: team.id,
         playerId: profile.playerId,
         offers: {
