@@ -183,13 +183,26 @@ export default function () {
   /**
    * Auto-initialize federation/season filters from the user's profile.
    *
-   * - If the user has a team, uses the team's country.
-   * - If teamless, uses the player's country.
-   * - Maps country → continent → federation.
+   * The competitions hub is primarily about the global tournament calendar,
+   * so default to the world federation when it is available. Users can still
+   * switch back to a regional federation from the filters.
    */
   React.useEffect(() => {
     if (hasQueryParams) return;
-    if (!state.profile || initializedFromProfile) return;
+    if (!state.profile || initializedFromProfile || !federations.length) return;
+
+    const worldFederation = federations.find(
+      (federation) => federation.slug === Constants.FederationSlug.ESPORTS_WORLD,
+    );
+
+    if (worldFederation) {
+      setSelectedFederationId(worldFederation.id);
+      if (state.profile.season > 0) {
+        setSelectedSeasonId(state.profile.season);
+      }
+      setInitializedFromProfile(true);
+      return;
+    }
 
     const competitionFederationId = state.profile.team?.competitionFederationId ?? null;
     if (competitionFederationId) {
@@ -228,7 +241,7 @@ export default function () {
     }
 
     setInitializedFromProfile(true);
-  }, [state.profile, state.continents, initializedFromProfile]);
+  }, [hasQueryParams, state.profile, state.continents, initializedFromProfile, federations]);
 
   /**
    * Once we know:
@@ -298,7 +311,8 @@ export default function () {
           return (
             tier.slug === Constants.TierSlug.MAJOR_CHALLENGERS_STAGE ||
             tier.slug === Constants.TierSlug.MAJOR_LEGENDS_STAGE ||
-            tier.slug === Constants.TierSlug.MAJOR_CHAMPIONS_STAGE
+            tier.slug === Constants.TierSlug.MAJOR_CHAMPIONS_STAGE ||
+            tier.league.slug === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE
           );
         }
 
