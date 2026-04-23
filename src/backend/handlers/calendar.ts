@@ -6,8 +6,27 @@ import { dialog, ipcMain } from "electron";
 import { add, addDays, differenceInDays, endOfDay, format, getISODay, startOfDay } from "date-fns";
 import { Prisma, Calendar } from "@prisma/client";
 import { DatabaseClient, Engine, WindowManager, Worldgen } from "@liga/backend/lib";
-import { syncRealtimeWorld } from '@liga/backend/lib/immersive-career';
+import { syncRealtimeWorld, withCompetitionStartTime } from '@liga/backend/lib/immersive-career';
 import { Bot, Eagers, Constants, Util, is } from "@liga/shared";
+
+const WORLD_CIRCUIT_START_OFFSETS: Record<string, number> = {
+  'blast-bounty:spring': 21,
+  'iem-katowice': 38,
+  [Constants.TierSlug.LEAGUE_PRO]: 56,
+  [Constants.TierSlug.LEAGUE_PRO_PLAYOFFS]: 77,
+  'blast-open:spring': 91,
+  'blast-rivals:spring': 108,
+  'pgl-bucharest': 122,
+  'esports-world-cup': 136,
+  'esl-pro-league:season-23': 156,
+  'starladder-starseries': 173,
+  'blast-bounty:fall': 190,
+  'iem-rio': 207,
+  'blast-open:fall': 224,
+  'blast-rivals:fall': 241,
+  'thunderpick-world-championship': 255,
+  'cs-asia-championship': 269,
+};
 
 /**
  * Prevents the main window from closing immediately while the calendar advances.
@@ -64,6 +83,36 @@ async function runCalendarAdvance(max?: number, forceSkippable = false) {
   return syncRealtimeWorld();
 }
 
+async function ensureCompetitionStartEntry(
+  competition: Prisma.CompetitionGetPayload<{
+    include: {
+      tier: { include: { league: true } };
+      federation: true;
+    };
+  }>,
+  scheduledDate: Date,
+) {
+  const existingStart = await DatabaseClient.prisma.calendar.findFirst({
+    where: {
+      type: Constants.CalendarEntry.COMPETITION_START,
+      payload: competition.id.toString(),
+    },
+    select: { id: true },
+  });
+
+  if (existingStart) {
+    return;
+  }
+
+  await DatabaseClient.prisma.calendar.create({
+    data: {
+      type: Constants.CalendarEntry.COMPETITION_START,
+      date: scheduledDate.toISOString(),
+      payload: competition.id.toString(),
+    },
+  });
+}
+
 /**
  * Recreate missing due competition-start entries.
  *
@@ -87,9 +136,6 @@ async function reconcileDueCompetitionStarts(profile: NonNullable<Awaited<Return
     where: {
       season: profile.season,
       status: Constants.CompetitionStatus.SCHEDULED,
-      tier: {
-        triggerOffsetDays: null,
-      },
     },
     include: {
       tier: {
@@ -102,31 +148,31 @@ async function reconcileDueCompetitionStarts(profile: NonNullable<Awaited<Return
   });
 
   for (const competition of competitions) {
-    const dueDate = addDays(seasonStart.date, competition.tier.league.startOffsetDays);
+    const worldCircuitOffset = WORLD_CIRCUIT_START_OFFSETS[competition.tier.slug];
+
+    if (
+      competition.tier.league.slug === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE &&
+      competition.federation.slug === Constants.FederationSlug.ESPORTS_WORLD &&
+      typeof worldCircuitOffset === 'number'
+    ) {
+      const scheduledDate = withCompetitionStartTime(addDays(seasonStart.date, worldCircuitOffset));
+      await ensureCompetitionStartEntry(
+        competition,
+        profile.date > scheduledDate ? withCompetitionStartTime(profile.date) : scheduledDate,
+      );
+      continue;
+    }
+
+    if (competition.tier.triggerOffsetDays != null) {
+      continue;
+    }
+
+    const dueDate = withCompetitionStartTime(addDays(seasonStart.date, competition.tier.league.startOffsetDays));
     if (profile.date < dueDate) {
       continue;
     }
 
-    const pendingStart = await DatabaseClient.prisma.calendar.findFirst({
-      where: {
-        type: Constants.CalendarEntry.COMPETITION_START,
-        payload: competition.id.toString(),
-        completed: false,
-      },
-      select: { id: true },
-    });
-
-    if (pendingStart) {
-      continue;
-    }
-
-    await DatabaseClient.prisma.calendar.create({
-      data: {
-        type: Constants.CalendarEntry.COMPETITION_START,
-        date: profile.date.toISOString(),
-        payload: competition.id.toString(),
-      },
-    });
+    await ensureCompetitionStartEntry(competition, withCompetitionStartTime(profile.date));
   }
 }
 
