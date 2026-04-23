@@ -680,6 +680,8 @@ export default function () {
                         />
                         <p className="text-center">
                           <em>{format(featuredMatch.date, 'PPPP')}</em>
+                          <br />
+                          <strong>Start {format(featuredMatch.date, 'HH:mm')}</strong>
                         </p>
                         <ul>
                           <li className="stack-x items-center">
