@@ -12,18 +12,20 @@ import { Prisma, Team } from '@prisma/client';
 import { Constants, Eagers, Util } from '@liga/shared';
 
 const InvitationalTierSlug = {
-  IEM_KATOWICE_GROUP: 'iem-katowice:group',
-  IEM_KATOWICE_PLAYOFFS: 'iem-katowice:playoffs',
-  BLAST_OPEN_GROUP: 'blast-open:group',
-  BLAST_OPEN_PLAYOFFS: 'blast-open:playoffs',
-  PGL_CHAMPIONSHIP_GROUP: 'pgl-championship:group',
-  PGL_CHAMPIONSHIP_PLAYOFFS: 'pgl-championship:playoffs',
-  BLAST_BOUNTY: 'blast-bounty',
-  BLAST_RIVALS: 'blast-rivals',
-  ESPORTS_WORLD_CUP_GROUP: 'esports-world-cup:group',
-  ESPORTS_WORLD_CUP_PLAYOFFS: 'esports-world-cup:playoffs',
-  CS_ASIA_CHAMPIONSHIP_GROUP: 'cs-asia-championship:group',
-  CS_ASIA_CHAMPIONSHIP_PLAYOFFS: 'cs-asia-championship:playoffs',
+  BLAST_BOUNTY_SPRING: 'blast-bounty:spring',
+  IEM_KATOWICE: 'iem-katowice',
+  BLAST_OPEN_SPRING: 'blast-open:spring',
+  BLAST_RIVALS_SPRING: 'blast-rivals:spring',
+  PGL_BUCHAREST: 'pgl-bucharest',
+  ESPORTS_WORLD_CUP: 'esports-world-cup',
+  ESL_PRO_LEAGUE_SEASON_23: 'esl-pro-league:season-23',
+  STARLADDER_STARSERIES: 'starladder-starseries',
+  BLAST_BOUNTY_FALL: 'blast-bounty:fall',
+  IEM_RIO: 'iem-rio',
+  BLAST_OPEN_FALL: 'blast-open:fall',
+  BLAST_RIVALS_FALL: 'blast-rivals:fall',
+  THUNDERPICK_WORLD_CHAMPIONSHIP: 'thunderpick-world-championship',
+  CS_ASIA_CHAMPIONSHIP: 'cs-asia-championship',
 } as const;
 
 const REGIONAL_LEAGUE_TIERS = new Set<string>([
@@ -41,6 +43,73 @@ const REGIONAL_PLAYOFF_TIER_BY_TIER: Partial<Record<string, string>> = {
 };
 
 const CUSTOM_INVITATIONAL_TIERS = new Set<string>(Object.values(InvitationalTierSlug));
+const WORLD_FEDERATION_ORDER = [
+  Constants.FederationSlug.ESPORTS_EUROPA,
+  Constants.FederationSlug.ESPORTS_AMERICAS,
+  Constants.FederationSlug.ESPORTS_ASIA,
+  Constants.FederationSlug.ESPORTS_OCE,
+] as const;
+
+type RegionQuota = Partial<Record<Constants.FederationSlug, [number, number]>>;
+
+const WORLD_EVENT_16: RegionQuota = {
+  [Constants.FederationSlug.ESPORTS_EUROPA]: [1, 8],
+  [Constants.FederationSlug.ESPORTS_AMERICAS]: [1, 4],
+  [Constants.FederationSlug.ESPORTS_ASIA]: [1, 2],
+  [Constants.FederationSlug.ESPORTS_OCE]: [1, 2],
+};
+
+const WORLD_EVENT_12: RegionQuota = {
+  [Constants.FederationSlug.ESPORTS_EUROPA]: [1, 6],
+  [Constants.FederationSlug.ESPORTS_AMERICAS]: [1, 3],
+  [Constants.FederationSlug.ESPORTS_ASIA]: [1, 2],
+  [Constants.FederationSlug.ESPORTS_OCE]: [1, 1],
+};
+
+const WORLD_EVENT_8: RegionQuota = {
+  [Constants.FederationSlug.ESPORTS_EUROPA]: [1, 4],
+  [Constants.FederationSlug.ESPORTS_AMERICAS]: [1, 2],
+  [Constants.FederationSlug.ESPORTS_ASIA]: [1, 1],
+  [Constants.FederationSlug.ESPORTS_OCE]: [1, 1],
+};
+
+const WORLD_EVENT_4: RegionQuota = {
+  [Constants.FederationSlug.ESPORTS_EUROPA]: [1, 2],
+  [Constants.FederationSlug.ESPORTS_AMERICAS]: [1, 1],
+  [Constants.FederationSlug.ESPORTS_ASIA]: [1, 1],
+};
+
+const PREVIOUS_SEASON_ADVANCED_QUALIFIERS: RegionQuota = {
+  [Constants.FederationSlug.ESPORTS_EUROPA]: [1, 4],
+  [Constants.FederationSlug.ESPORTS_AMERICAS]: [1, 4],
+  [Constants.FederationSlug.ESPORTS_ASIA]: [1, 2],
+  [Constants.FederationSlug.ESPORTS_OCE]: [1, 2],
+};
+
+const EPL_SEASON_22_FALLBACK: RegionQuota = {
+  [Constants.FederationSlug.ESPORTS_EUROPA]: [1, 10],
+  [Constants.FederationSlug.ESPORTS_AMERICAS]: [1, 6],
+  [Constants.FederationSlug.ESPORTS_ASIA]: [1, 2],
+  [Constants.FederationSlug.ESPORTS_OCE]: [1, 2],
+};
+
+const CURRENT_SEASON_ADVANCED_QUALIFIERS: RegionQuota = {
+  [Constants.FederationSlug.ESPORTS_EUROPA]: [1, 2],
+  [Constants.FederationSlug.ESPORTS_AMERICAS]: [1, 2],
+  [Constants.FederationSlug.ESPORTS_ASIA]: [1, 1],
+  [Constants.FederationSlug.ESPORTS_OCE]: [1, 1],
+};
+
+const EPL_SEASON_23_FALLBACK: RegionQuota = {
+  [Constants.FederationSlug.ESPORTS_EUROPA]: [1, 3],
+  [Constants.FederationSlug.ESPORTS_AMERICAS]: [1, 2],
+  [Constants.FederationSlug.ESPORTS_ASIA]: [1, 1],
+};
+
+const ASIA_EVENT_8: RegionQuota = {
+  [Constants.FederationSlug.ESPORTS_ASIA]: [1, 6],
+  [Constants.FederationSlug.ESPORTS_OCE]: [1, 2],
+};
 
 export enum Action {
   EXCLUDE = 'exclude',
@@ -66,6 +135,24 @@ export interface Item {
   entries: Array<Entry>;
 }
 
+const federationEntry = (
+  action: Action,
+  from: string,
+  target: string,
+  federationSlug: Constants.FederationSlug,
+  start: number,
+  end?: number,
+  season?: number,
+): Entry => ({
+  action,
+  from,
+  target,
+  federationSlug,
+  start,
+  ...(typeof end === 'number' ? { end } : {}),
+  ...(typeof season === 'number' ? { season } : {}),
+});
+
 const regionalEntry = (
   action: Action,
   target: string,
@@ -74,30 +161,55 @@ const regionalEntry = (
   end?: number,
   season?: number,
   from = Constants.LeagueSlug.ESPORTS_LEAGUE,
-): Entry => ({
-  action,
-  from,
-  target,
-  federationSlug,
-  start,
-  ...(end ? { end } : {}),
-  ...(typeof season === 'number' ? { season } : {}),
-});
+): Entry => federationEntry(action, from, target, federationSlug, start, end, season);
 
-const worldEntry = (
+const worldOverallEntry = (
   action: Action,
   target: string,
   start: number,
   end?: number,
-  federationSlug = Constants.FederationSlug.ESPORTS_WORLD,
-): Entry => ({
+  season?: number,
+  from = Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+): Entry => federationEntry(
   action,
-  from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
+  from,
   target,
-  federationSlug,
+  Constants.FederationSlug.ESPORTS_WORLD,
   start,
-  ...(end ? { end } : {}),
-});
+  end,
+  season,
+);
+
+const quotaEntries = (
+  action: Action,
+  from: string,
+  target: string,
+  quotas: RegionQuota,
+  season?: number,
+): Array<Entry> =>
+  WORLD_FEDERATION_ORDER.flatMap((federationSlug) => {
+    const quota = quotas[federationSlug];
+    return quota
+      ? [federationEntry(action, from, target, federationSlug, quota[0], quota[1], season)]
+      : [];
+  });
+
+const worldCircuitFallbackEntries = (target: string, quotas: RegionQuota): Array<Entry> =>
+  quotaEntries(Action.FALLBACK, Constants.LeagueSlug.ESPORTS_PRO_LEAGUE, target, quotas);
+
+const worldCircuitIncludeEntries = (
+  sourceTierSlug: string,
+  quotas: RegionQuota,
+  season = 0,
+): Array<Entry> =>
+  quotaEntries(Action.INCLUDE, Constants.LeagueSlug.ESPORTS_PRO_LEAGUE, sourceTierSlug, quotas, season);
+
+const regionalLeagueIncludeEntries = (
+  sourceTierSlug: string,
+  quotas: RegionQuota,
+  season: number,
+): Array<Entry> =>
+  quotaEntries(Action.INCLUDE, Constants.LeagueSlug.ESPORTS_LEAGUE, sourceTierSlug, quotas, season);
 
 export const Items: Array<Item> = [
   {
@@ -245,13 +357,31 @@ export const Items: Array<Item> = [
     ],
   },
   {
+    tierSlug: InvitationalTierSlug.BLAST_BOUNTY_SPRING,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.BLAST_BOUNTY_SPRING, WORLD_EVENT_16),
+    ],
+  },
+  {
+    tierSlug: InvitationalTierSlug.IEM_KATOWICE,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.IEM_KATOWICE,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.BLAST_BOUNTY_SPRING, 1, 8, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.IEM_KATOWICE, WORLD_EVENT_8),
+    ],
+  },
+  {
     tierSlug: Constants.TierSlug.LEAGUE_PRO,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [
-      worldEntry(Action.FALLBACK, Constants.TierSlug.LEAGUE_PRO, 1, 16, Constants.FederationSlug.ESPORTS_EUROPA),
-      worldEntry(Action.FALLBACK, Constants.TierSlug.LEAGUE_PRO, 1, 8, Constants.FederationSlug.ESPORTS_AMERICAS),
-      worldEntry(Action.FALLBACK, Constants.TierSlug.LEAGUE_PRO, 1, 4, Constants.FederationSlug.ESPORTS_ASIA),
-      worldEntry(Action.FALLBACK, Constants.TierSlug.LEAGUE_PRO, 1, 4, Constants.FederationSlug.ESPORTS_OCE),
+      ...regionalLeagueIncludeEntries(Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS, PREVIOUS_SEASON_ADVANCED_QUALIFIERS, -1),
+      ...worldCircuitFallbackEntries(Constants.TierSlug.LEAGUE_PRO, EPL_SEASON_22_FALLBACK),
     ],
   },
   {
@@ -263,101 +393,159 @@ export const Items: Array<Item> = [
     tierSlug: Constants.TierSlug.LEAGUE_PRO_PLAYOFFS,
     on: Constants.CalendarEntry.COMPETITION_START,
     entries: [
-      {
-        action: Action.INCLUDE,
-        from: Constants.LeagueSlug.ESPORTS_PRO_LEAGUE,
-        target: Constants.TierSlug.LEAGUE_PRO,
-        federationSlug: Constants.FederationSlug.ESPORTS_WORLD,
-        start: 1,
-        end: 16,
-        season: 0,
-      },
+      worldOverallEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_PRO, 1, 16, 0),
     ],
   },
   {
-    tierSlug: InvitationalTierSlug.IEM_KATOWICE_GROUP,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.IEM_KATOWICE_GROUP, 1, 16)],
-  },
-  {
-    tierSlug: InvitationalTierSlug.IEM_KATOWICE_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.BLAST_OPEN_SPRING,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [],
   },
   {
-    tierSlug: InvitationalTierSlug.IEM_KATOWICE_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.BLAST_OPEN_SPRING,
     on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.IEM_KATOWICE_GROUP, 1, 8)],
+    entries: [
+      worldOverallEntry(Action.INCLUDE, Constants.TierSlug.LEAGUE_PRO_PLAYOFFS, 1, 8, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.BLAST_OPEN_SPRING, WORLD_EVENT_8),
+    ],
   },
   {
-    tierSlug: InvitationalTierSlug.BLAST_OPEN_GROUP,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.BLAST_OPEN_GROUP, 1, 16)],
-  },
-  {
-    tierSlug: InvitationalTierSlug.BLAST_OPEN_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.BLAST_RIVALS_SPRING,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [],
   },
   {
-    tierSlug: InvitationalTierSlug.BLAST_OPEN_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.BLAST_RIVALS_SPRING,
     on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.BLAST_OPEN_GROUP, 1, 8)],
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.BLAST_OPEN_SPRING, 1, 4, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.BLAST_RIVALS_SPRING, WORLD_EVENT_4),
+    ],
   },
   {
-    tierSlug: InvitationalTierSlug.PGL_CHAMPIONSHIP_GROUP,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.PGL_CHAMPIONSHIP_GROUP, 1, 16)],
-  },
-  {
-    tierSlug: InvitationalTierSlug.PGL_CHAMPIONSHIP_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.PGL_BUCHAREST,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [],
   },
   {
-    tierSlug: InvitationalTierSlug.PGL_CHAMPIONSHIP_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.PGL_BUCHAREST,
     on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.PGL_CHAMPIONSHIP_GROUP, 1, 8)],
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.BLAST_RIVALS_SPRING, 1, 4, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.PGL_BUCHAREST, WORLD_EVENT_4),
+    ],
   },
   {
-    tierSlug: InvitationalTierSlug.BLAST_BOUNTY,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.BLAST_BOUNTY, 1, 8)],
-  },
-  {
-    tierSlug: InvitationalTierSlug.BLAST_RIVALS,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.BLAST_RIVALS, 1, 8)],
-  },
-  {
-    tierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP_GROUP,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.ESPORTS_WORLD_CUP_GROUP, 1, 16)],
-  },
-  {
-    tierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [],
   },
   {
-    tierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP,
     on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.ESPORTS_WORLD_CUP_GROUP, 1, 8)],
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.PGL_BUCHAREST, 1, 4, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.ESPORTS_WORLD_CUP, WORLD_EVENT_12),
+    ],
   },
   {
-    tierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_GROUP,
-    on: Constants.CalendarEntry.SEASON_START,
-    entries: [worldEntry(Action.FALLBACK, InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_GROUP, 1, 8, Constants.FederationSlug.ESPORTS_ASIA)],
-  },
-  {
-    tierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.ESL_PRO_LEAGUE_SEASON_23,
     on: Constants.CalendarEntry.SEASON_START,
     entries: [],
   },
   {
-    tierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_PLAYOFFS,
+    tierSlug: InvitationalTierSlug.ESL_PRO_LEAGUE_SEASON_23,
     on: Constants.CalendarEntry.COMPETITION_START,
-    entries: [worldEntry(Action.INCLUDE, InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP_GROUP, 1, 4, Constants.FederationSlug.ESPORTS_ASIA)],
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.ESPORTS_WORLD_CUP, 1, 4, 0),
+      ...regionalLeagueIncludeEntries(Constants.TierSlug.LEAGUE_ADVANCED_PLAYOFFS, CURRENT_SEASON_ADVANCED_QUALIFIERS, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.ESL_PRO_LEAGUE_SEASON_23, EPL_SEASON_23_FALLBACK),
+    ],
+  },
+  {
+    tierSlug: InvitationalTierSlug.STARLADDER_STARSERIES,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.STARLADDER_STARSERIES,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.ESL_PRO_LEAGUE_SEASON_23, 1, 4, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.STARLADDER_STARSERIES, WORLD_EVENT_4),
+    ],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_BOUNTY_FALL,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_BOUNTY_FALL,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.STARLADDER_STARSERIES, 1, 4, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.BLAST_BOUNTY_FALL, WORLD_EVENT_12),
+    ],
+  },
+  {
+    tierSlug: InvitationalTierSlug.IEM_RIO,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.IEM_RIO,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.BLAST_BOUNTY_FALL, 1, 8, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.IEM_RIO, WORLD_EVENT_8),
+    ],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_OPEN_FALL,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_OPEN_FALL,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.IEM_RIO, 1, 8, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.BLAST_OPEN_FALL, WORLD_EVENT_8),
+    ],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_RIVALS_FALL,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.BLAST_RIVALS_FALL,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.BLAST_OPEN_FALL, 1, 4, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.BLAST_RIVALS_FALL, WORLD_EVENT_4),
+    ],
+  },
+  {
+    tierSlug: InvitationalTierSlug.THUNDERPICK_WORLD_CHAMPIONSHIP,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [],
+  },
+  {
+    tierSlug: InvitationalTierSlug.THUNDERPICK_WORLD_CHAMPIONSHIP,
+    on: Constants.CalendarEntry.COMPETITION_START,
+    entries: [
+      worldOverallEntry(Action.INCLUDE, InvitationalTierSlug.BLAST_RIVALS_FALL, 1, 4, 0),
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.THUNDERPICK_WORLD_CHAMPIONSHIP, WORLD_EVENT_4),
+    ],
+  },
+  {
+    tierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP,
+    on: Constants.CalendarEntry.SEASON_START,
+    entries: [
+      ...worldCircuitFallbackEntries(InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP, ASIA_EVENT_8),
+    ],
   },
   {
     tierSlug: Constants.TierSlug.MAJOR_ASIA_OPEN_QUALIFIER_1,
