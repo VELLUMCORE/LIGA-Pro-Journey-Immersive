@@ -1265,6 +1265,7 @@ End\n
    */
   private async launchClientCSGO() {
     this.clientLaunchedViaSteam = false;
+    gameClientProcess = null;
 
     const defaultArgs = [
       '-insecure',
@@ -1272,8 +1273,6 @@ End\n
       '+connect',
       CSGO_CONNECT_ADDRESS,
     ];
-
-    const launchArgs = [...defaultArgs, ...this.userArgs];
 
     if (is.osx()) {
       this.clientLaunchedViaSteam = true;
@@ -1289,6 +1288,7 @@ End\n
     } else {
       const resolvedSteamPath = this.settings.general.steamPath || await discoverSteamPath();
       let gameLibrary = this.settings.general.gamePath;
+      let gameInstallPath: string | null = null;
 
       if (!gameLibrary) {
         try {
@@ -1328,7 +1328,39 @@ End\n
       }
 
       if (gameLibrary) {
-        const gameInstallPath = path.join(gameLibrary, Constants.GameSettings.CSGO_BASEDIR);
+        gameInstallPath = path.join(gameLibrary, Constants.GameSettings.CSGO_BASEDIR);
+        await this.writeClientConnectConfig(gameInstallPath);
+      }
+
+      const launchArgs = [
+        '-insecure',
+        '-novid',
+        '+exec',
+        'liga-connect.cfg',
+        '+connect',
+        CSGO_CONNECT_ADDRESS,
+        ...this.userArgs,
+      ];
+
+      const steamExecutable = resolvedSteamPath
+        ? path.join(resolvedSteamPath, Constants.GameSettings.STEAM_EXE)
+        : null;
+
+      if (steamExecutable) {
+        try {
+          await fs.promises.access(steamExecutable, fs.constants.F_OK);
+          this.clientLaunchedViaSteam = true;
+          gameClientProcess = spawn(steamExecutable, [
+            '-applaunch',
+            Constants.GameSettings.CSGO_APPID.toString(),
+            ...launchArgs,
+          ]);
+        } catch (_) {
+          this.log.warn(`Steam executable not found at: ${steamExecutable}`);
+        }
+      }
+
+      if (!gameClientProcess && gameInstallPath) {
         const gameExecutable = path.join(gameInstallPath, Constants.GameSettings.CSGO_EXE);
 
         try {
@@ -1344,33 +1376,35 @@ End\n
       }
 
       if (!gameClientProcess) {
-        const steamExecutable = resolvedSteamPath
-          ? path.join(resolvedSteamPath, Constants.GameSettings.STEAM_EXE)
-          : null;
-        const steamArgs = [
-          '-applaunch',
-          Constants.GameSettings.CSGO_APPID.toString(),
-          ...launchArgs,
-        ];
-
-        if (steamExecutable) {
-          try {
-            await fs.promises.access(steamExecutable, fs.constants.F_OK);
-            this.clientLaunchedViaSteam = true;
-            gameClientProcess = spawn(steamExecutable, steamArgs);
-          } catch (_) {
-            this.log.warn(`Steam executable not found at: ${steamExecutable}`);
-          }
-        }
-      }
-
-      if (!gameClientProcess) {
         throw new Error('Unable to launch CS:GO client. Neither csgo.exe nor steam.exe could be started.');
       }
     }
 
     this.log.debug(gameClientProcess.spawnargs);
     return Promise.resolve();
+  }
+
+  private async writeClientConnectConfig(gameInstallPath: string) {
+    const connectConfigPath = path.join(
+      gameInstallPath,
+      Constants.GameSettings.CSGO_GAMEDIR,
+      'cfg',
+      'liga-connect.cfg',
+    );
+
+    const content = [
+      'echo "LIGA auto-connect"',
+      `connect ${CSGO_CONNECT_ADDRESS}`,
+      '',
+    ].join('\n');
+
+    try {
+      await fs.promises.mkdir(path.dirname(connectConfigPath), { recursive: true });
+      await fs.promises.writeFile(connectConfigPath, content, 'utf8');
+      this.log.info(`Wrote CS:GO client auto-connect cfg: ${connectConfigPath}`);
+    } catch (error) {
+      this.log.warn(`Unable to write CS:GO client auto-connect cfg: ${error}`);
+    }
   }
 
   private async connectClientCSGO() {
