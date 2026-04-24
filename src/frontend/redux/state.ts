@@ -20,8 +20,11 @@ export interface AppAction {
   payload?: any;
 }
 
-export type ThunkAction = (dispatch: AppDispatch) => void | Promise<void>;
-export type AppDispatch = (action: AppAction | ThunkAction) => void;
+export type ThunkAction = (
+  dispatch: AppDispatch,
+  getState: () => AppState,
+) => void | Promise<void>;
+export type AppDispatch = (action: AppAction | ThunkAction) => void | Promise<void>;
 
 /** Root State */
 export interface AppState {

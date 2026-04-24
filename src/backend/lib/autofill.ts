@@ -51,6 +51,9 @@ const WORLD_FEDERATION_ORDER = [
 ] as const;
 
 type RegionQuota = Partial<Record<Constants.FederationSlug, [number, number]>>;
+type CompetitionWithTeamCompetitors = Prisma.CompetitionGetPayload<{
+  include: { competitors: { include: { team: true } } };
+}>;
 
 const WORLD_EVENT_16: RegionQuota = {
   [Constants.FederationSlug.ESPORTS_EUROPA]: [1, 8],
@@ -857,7 +860,8 @@ async function getRegionalLeaguePlacements(
     return [];
   }
 
-  const playoffCompetitors = playoffsCompetition?.competitors ?? [];
+  const playoffCompetitors: CompetitionWithTeamCompetitors['competitors'] =
+    playoffsCompetition?.competitors ?? [];
   const playoffTeamIds = new Set(playoffCompetitors.map((competitor) => competitor.teamId));
 
   return [

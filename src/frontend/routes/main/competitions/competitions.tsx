@@ -311,8 +311,7 @@ export default function () {
           return (
             tier.slug === Constants.TierSlug.MAJOR_CHALLENGERS_STAGE ||
             tier.slug === Constants.TierSlug.MAJOR_LEGENDS_STAGE ||
-            tier.slug === Constants.TierSlug.MAJOR_CHAMPIONS_STAGE ||
-            tier.league.slug === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE
+            tier.slug === Constants.TierSlug.MAJOR_CHAMPIONS_STAGE
           );
         }
 

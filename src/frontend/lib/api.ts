@@ -290,9 +290,9 @@ export default {
       ipcRenderer.invoke(Constants.IPCRoute.MAP_POOL_UPDATE_MANY, query) as Promise<unknown>,
   },
   match: {
-    find: (query: Prisma.MatchFindFirstArgs) =>
+    find: <T = typeof Eagers.match>(query: Prisma.MatchFindFirstArgs) =>
       ipcRenderer.invoke(Constants.IPCRoute.MATCH_FIND, query) as Promise<
-        Prisma.MatchGetPayload<unknown>
+        Prisma.MatchGetPayload<T>
       >,
     findVetoList: (id: number) =>
       ipcRenderer.invoke(Constants.IPCRoute.MATCH_FIND_VETO_LIST, id) as Promise<Array<MatchVetoRecord>>,
