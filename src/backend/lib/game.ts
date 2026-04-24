@@ -93,8 +93,9 @@ export async function discoverGamePath(enumId: string, steamPath?: string) {
     steamPath = await discoverSteamPath();
   }
 
-  // get the game app id from its short name
-  const id = Constants.GameSettings.CSGO_APPID;
+  // CS:GO Legacy can live next to the public CS2 app (730) even when the
+  // legacy app id is not present in libraryfolders.vdf.
+  const ids = uniq([Constants.GameSettings.CSGO_APPID, 730].map(String));
 
   // the libraries manifest file contains a dictionary
   // containing installed game enums
@@ -104,9 +105,10 @@ export async function discoverGamePath(enumId: string, steamPath?: string) {
   );
   const { libraryfolders } = VDF.parse(librariesFileContent);
 
-  // find the folder containing the game id
+  // find the folder containing either the configured legacy app id or CS2
   const library = Object.values(libraryfolders).find((folder: Record<string, unknown>) => {
-    return Object.keys(folder.apps).includes(String(id));
+    const apps = folder.apps as Record<string, unknown> | undefined;
+    return Boolean(apps && ids.some((id) => Object.keys(apps).includes(id)));
   }) as Record<string, unknown>;
 
   // if none is found, throw an error
@@ -1262,9 +1264,9 @@ End\n
    * @function
    */
   private scheduleSteamConnectCSGOOnce() {
-    const connectAddress = `${this.getLocalIP()}:${Constants.GameSettings.RCON_PORT}`;
+    const connectAddress = `127.0.0.1:${Constants.GameSettings.RCON_PORT}`;
     const connectURI = `steam://connect/${connectAddress}`;
-    const handoffDelayMs = 15000;
+    const handoffDelayMsList = [30000, 45000, 60000];
 
     const openURI = (uri: string) => {
       if (is.osx()) {
@@ -1283,19 +1285,25 @@ End\n
       process.unref();
     };
 
-    setTimeout(() => {
-      if (gameClientProcess?.exitCode !== null) {
-        this.log.warn('Skipping delayed steam://connect because client process has already exited.');
-        return;
-      }
+    handoffDelayMsList.forEach((handoffDelayMs) => {
+      setTimeout(() => {
+        if (!this.clientLaunchedViaSteam && gameClientProcess?.exitCode !== null) {
+          this.log.warn('Skipping delayed steam://connect because client process has already exited.');
+          return;
+        }
 
-      try {
-        this.log.debug('Steam connect handoff after 30s: opening %s', connectURI);
-        openURI(connectURI);
-      } catch (error) {
-        this.log.warn('Delayed steam://connect attempt failed: %s', error);
-      }
-    }, handoffDelayMs);
+        try {
+          this.log.debug(
+            'Steam connect handoff after %ss: opening %s',
+            handoffDelayMs / 1000,
+            connectURI,
+          );
+          openURI(connectURI);
+        } catch (error) {
+          this.log.warn('Delayed steam://connect attempt failed: %s', error);
+        }
+      }, handoffDelayMs);
+    });
   }
 
   /**
@@ -1333,9 +1341,38 @@ End\n
           gameLibrary = await discoverGamePath(this.settings.general.game, resolvedSteamPath || undefined);
           this.settings.general.gamePath = gameLibrary;
         } catch (_) {
-          // fallback to Steam launch below
+          // try explicit library fallbacks below before falling back to Steam
         }
       }
+
+      if (!gameLibrary) {
+        const fallbackLibraries = uniq([
+          resolvedSteamPath,
+          this.settings.general.dedicatedServerPath
+            ? path.resolve(this.settings.general.dedicatedServerPath, '..', '..', '..')
+            : null,
+          'D:/SteamLibrary',
+          'C:/Program Files (x86)/Steam',
+        ].filter(Boolean) as string[]);
+
+        for (const fallbackLibrary of fallbackLibraries) {
+          const fallbackExecutable = path.join(
+            fallbackLibrary,
+            Constants.GameSettings.CSGO_BASEDIR,
+            Constants.GameSettings.CSGO_EXE,
+          );
+
+          try {
+            await fs.promises.access(fallbackExecutable, fs.constants.F_OK);
+            gameLibrary = fallbackLibrary;
+            this.settings.general.gamePath = fallbackLibrary;
+            break;
+          } catch (_) {
+            // keep looking through known Steam library locations
+          }
+        }
+      }
+
       if (gameLibrary) {
         const gameInstallPath = path.join(gameLibrary, Constants.GameSettings.CSGO_BASEDIR);
         const gameExecutable = path.join(gameInstallPath, Constants.GameSettings.CSGO_EXE);
