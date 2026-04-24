@@ -8,20 +8,42 @@ import { Constants } from '@liga/shared';
 
 const InvitationalTierSlug = {
   BLAST_BOUNTY_SPRING: 'blast-bounty:spring',
-  IEM_KATOWICE: 'iem-katowice',
+  IEM_EVENT_1: 'iem:event-1',
+  IEM_EVENT_2: 'iem:event-2',
   BLAST_OPEN_SPRING: 'blast-open:spring',
   BLAST_RIVALS_SPRING: 'blast-rivals:spring',
   PGL_BUCHAREST: 'pgl-bucharest',
+  IEM_EVENT_3: 'iem:event-3',
   ESPORTS_WORLD_CUP: 'esports-world-cup',
   ESL_PRO_LEAGUE_SEASON_23: 'esl-pro-league:season-23',
   STARLADDER_STARSERIES: 'starladder-starseries',
   BLAST_BOUNTY_FALL: 'blast-bounty:fall',
-  IEM_RIO: 'iem-rio',
+  IEM_EVENT_4: 'iem:event-4',
   BLAST_OPEN_FALL: 'blast-open:fall',
   BLAST_RIVALS_FALL: 'blast-rivals:fall',
   THUNDERPICK_WORLD_CHAMPIONSHIP: 'thunderpick-world-championship',
+  IEM_EVENT_5: 'iem:event-5',
   CS_ASIA_CHAMPIONSHIP: 'cs-asia-championship',
 } as const;
+
+const IEM_VENUES = [
+  'Katowice',
+  'Krakow',
+  'Dallas',
+  'Cologne',
+  'Rio',
+  'Chengdu',
+  'Sydney',
+  'Melbourne',
+  'Shanghai',
+  'Oakland',
+  'Beijing',
+] as const;
+const IEM_YEAR = new Date().getFullYear();
+const IEM_EVENT_NAMES = [...IEM_VENUES]
+  .sort(() => Math.random() - 0.5)
+  .slice(0, 5)
+  .map((venue) => `IEM ${venue} ${IEM_YEAR}`);
 
 /** @type {LeagueSeedData} */
 type LeagueSeedData = Prisma.LeagueCreateInput & {
@@ -111,12 +133,20 @@ const data: Array<LeagueSeedData> = [
         slug: InvitationalTierSlug.BLAST_BOUNTY_SPRING,
         size: 16,
         lan: false,
-        triggerTierSlug: InvitationalTierSlug.IEM_KATOWICE,
+        triggerTierSlug: InvitationalTierSlug.IEM_EVENT_1,
       },
       {
-        name: 'IEM Katowice',
-        slug: InvitationalTierSlug.IEM_KATOWICE,
-        size: 16,
+        name: IEM_EVENT_NAMES[0],
+        slug: InvitationalTierSlug.IEM_EVENT_1,
+        size: 14,
+        lan: true,
+        triggerOffsetDays: 10,
+        triggerTierSlug: InvitationalTierSlug.IEM_EVENT_2,
+      },
+      {
+        name: IEM_EVENT_NAMES[1],
+        slug: InvitationalTierSlug.IEM_EVENT_2,
+        size: 14,
         lan: true,
         triggerOffsetDays: 10,
         triggerTierSlug: Constants.TierSlug.LEAGUE_PRO,
@@ -160,6 +190,14 @@ const data: Array<LeagueSeedData> = [
         size: 8,
         lan: true,
         triggerOffsetDays: 12,
+        triggerTierSlug: InvitationalTierSlug.IEM_EVENT_3,
+      },
+      {
+        name: IEM_EVENT_NAMES[2],
+        slug: InvitationalTierSlug.IEM_EVENT_3,
+        size: 14,
+        lan: true,
+        triggerOffsetDays: 10,
         triggerTierSlug: InvitationalTierSlug.ESPORTS_WORLD_CUP,
       },
       {
@@ -192,12 +230,12 @@ const data: Array<LeagueSeedData> = [
         size: 16,
         lan: false,
         triggerOffsetDays: 10,
-        triggerTierSlug: InvitationalTierSlug.IEM_RIO,
+        triggerTierSlug: InvitationalTierSlug.IEM_EVENT_4,
       },
       {
-        name: 'IEM Rio',
-        slug: InvitationalTierSlug.IEM_RIO,
-        size: 16,
+        name: IEM_EVENT_NAMES[3],
+        slug: InvitationalTierSlug.IEM_EVENT_4,
+        size: 14,
         lan: true,
         triggerOffsetDays: 10,
         triggerTierSlug: InvitationalTierSlug.BLAST_OPEN_FALL,
@@ -224,6 +262,14 @@ const data: Array<LeagueSeedData> = [
         size: 8,
         lan: true,
         triggerOffsetDays: 12,
+        triggerTierSlug: InvitationalTierSlug.IEM_EVENT_5,
+      },
+      {
+        name: IEM_EVENT_NAMES[4],
+        slug: InvitationalTierSlug.IEM_EVENT_5,
+        size: 14,
+        lan: true,
+        triggerOffsetDays: 10,
         triggerTierSlug: InvitationalTierSlug.CS_ASIA_CHAMPIONSHIP,
       },
       {
