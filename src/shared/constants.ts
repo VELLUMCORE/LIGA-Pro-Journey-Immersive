@@ -681,7 +681,7 @@ export const GameSettings = {
   CSGO_LANGUAGE_FILE: 'resource/csgo_english.txt',
   CSGO_SERVER_CONFIG_FILE: 'cfg/server.cfg',
   CSGO_STEAM_INF_FILE: 'steam.inf',
-  CSGO_VERSION: 2000258,
+  CSGO_VERSION: 2000528,
 
   // rcon settings
   RCON_MAX_ATTEMPTS: 10,

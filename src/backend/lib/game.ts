@@ -1536,8 +1536,8 @@ End\n
 
 
   /**
-   * Copies CS:GO `steam.inf` from the plugin package into both
-   * the dedicated server and client game directories.
+   * Normalizes CS:GO Steam metadata in both the dedicated server and client
+   * game directories.
    *
    * @param from Source plugins/csgo directory.
    * @function
@@ -1546,21 +1546,36 @@ End\n
     const steamInfName = 'steam.inf';
     const source = path.join(from, steamInfName);
 
-    try {
-      await fs.promises.access(source, fs.constants.F_OK);
-    } catch (_) {
-      this.log.warn(`steam.inf not found in plugin source: ${source}`);
-      return;
-    }
-
     const gameAppId = String(Constants.GameSettings.CSGO_APPID);
     const dedicatedServerAppId = String(Constants.GameSettings.CSGO_DS_APPID);
-    const sourceContent = await fs.promises.readFile(source, 'utf8');
-    const steamInfContent = /^appID=/m.test(sourceContent)
-      ? sourceContent.replace(/^appID=.*$/m, `appID=${gameAppId}`)
-      : `${sourceContent.trimEnd()}
-appID=${gameAppId}
+    const gameVersion = String(Constants.GameSettings.CSGO_VERSION);
+    let sourceContent: string | null = null;
+
+    try {
+      sourceContent = await fs.promises.readFile(source, 'utf8');
+    } catch (_) {
+      this.log.warn(`steam.inf not found in plugin source; patching installed files directly: ${source}`);
+    }
+
+    const upsertSteamInfValue = (content: string, key: string, value: string) => {
+      const pattern = new RegExp(`^${key}=.*$`, 'mi');
+
+      if (pattern.test(content)) {
+        return content.replace(pattern, `${key}=${value}`);
+      }
+
+      return `${content.trimEnd()}
+${key}=${value}`;
+    };
+
+    const normalizeSteamInf = (content: string) => {
+      let next = content.trimEnd();
+      next = upsertSteamInfValue(next, 'ClientVersion', gameVersion);
+      next = upsertSteamInfValue(next, 'ServerVersion', gameVersion);
+      next = upsertSteamInfValue(next, 'appID', gameAppId);
+      return `${next}
 `;
+    };
     const normalizeGameInfo = (content: string) => {
       if (/^(\s*SteamAppId\s+)\d+/mi.test(content)) {
         return content.replace(/^(\s*SteamAppId\s+)\d+/mi, `$1${gameAppId}`);
@@ -1575,7 +1590,7 @@ SteamAppId ${gameAppId}
 `;
     };
 
-    const targets = [
+    const steamInfTargets = [
       path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, steamInfName),
     ];
     const dedicatedServerAppIdTargets = [
@@ -1591,17 +1606,32 @@ SteamAppId ${gameAppId}
       const clientRoot = path.join(this.settings.general.gamePath, Constants.GameSettings.CSGO_BASEDIR);
       const clientGameDir = path.join(clientRoot, Constants.GameSettings.CSGO_GAMEDIR);
 
-      targets.push(path.join(clientGameDir, steamInfName));
+      steamInfTargets.push(path.join(clientGameDir, steamInfName));
       clientAppIdTargets.push(path.join(clientRoot, 'steam_appid.txt'));
       gameInfoTargets.push(path.join(clientGameDir, 'gameinfo.txt'));
     } else {
       this.log.warn('No gamePath set; skipping client CS:GO App ID normalization.');
     }
 
-    for (const target of targets) {
+    for (const target of steamInfTargets) {
+      let content = sourceContent;
+
+      try {
+        content = await fs.promises.readFile(target, 'utf8');
+      } catch (_) {
+        if (!content) {
+          this.log.warn(`Skipping steam.inf App ID normalization; file not found: ${target}`);
+          continue;
+        }
+      }
+
+      if (content == null) {
+        continue;
+      }
+
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
-      await fs.promises.writeFile(target, steamInfContent, 'utf8');
-      this.log.info(`Copied steam.inf to: ${target}`);
+      await fs.promises.writeFile(target, normalizeSteamInf(content), 'utf8');
+      this.log.info(`Normalized CS:GO steam.inf App ID/version in: ${target}`);
     }
 
     for (const target of dedicatedServerAppIdTargets) {
