@@ -1439,6 +1439,8 @@ End\n
       '-console',
       '-usercon',
       '-insecure',
+      '-net_port_try',
+      '1',
       '-tickrate 128',
       '-maxplayers_override',
       '10',
@@ -1447,6 +1449,8 @@ End\n
       '+game_type',
       '0',
       '+game_mode',
+      '1',
+      '+sv_lan',
       '1',
       '-port',
       Constants.GameSettings.RCON_PORT.toString(),
@@ -1547,7 +1551,6 @@ End\n
     const source = path.join(from, steamInfName);
 
     const gameAppId = String(Constants.GameSettings.CSGO_APPID);
-    const dedicatedServerAppId = String(Constants.GameSettings.CSGO_DS_APPID);
     const gameVersion = String(Constants.GameSettings.CSGO_VERSION);
     let sourceContent: string | null = null;
 
@@ -1593,7 +1596,7 @@ SteamAppId ${gameAppId}
     const steamInfTargets = [
       path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, steamInfName),
     ];
-    const dedicatedServerAppIdTargets = [
+    const serverAppIdTargets = [
       path.join(this.getDedicatedServerRoot(), 'steam_appid.txt'),
       path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, 'steam_appid.txt'),
     ];
@@ -1634,11 +1637,11 @@ SteamAppId ${gameAppId}
       this.log.info(`Normalized CS:GO steam.inf App ID/version in: ${target}`);
     }
 
-    for (const target of dedicatedServerAppIdTargets) {
+    for (const target of serverAppIdTargets) {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
-      await fs.promises.writeFile(target, `${dedicatedServerAppId}
+      await fs.promises.writeFile(target, `${gameAppId}
 `, 'utf8');
-      this.log.info(`Wrote dedicated server steam_appid.txt to: ${target}`);
+      this.log.info(`Wrote standalone CS:GO server steam_appid.txt to: ${target}`);
     }
 
     for (const target of clientAppIdTargets) {
