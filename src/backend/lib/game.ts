@@ -29,6 +29,8 @@ import DatabaseClient from "./database-client";
  */
 const exec = util.promisify(execSync);
 
+const CSGO_CONNECT_ADDRESS = '192.168.45.101:27016';
+
 /**
  * Track the game process instance at the module level so
  * other modules know if the app has launched the process
@@ -1256,56 +1258,6 @@ End\n
     return logoPath;
   }
 
-
-  /**
-   * Triggers a one-time delayed steam://connect attempt after the
-   * game process has already been launched.
-   *
-   * @function
-   */
-  private scheduleSteamConnectCSGOOnce() {
-    const connectAddress = `127.0.0.1:${Constants.GameSettings.RCON_PORT}`;
-    const connectURI = `steam://connect/${connectAddress}`;
-    const handoffDelayMsList = [30000, 45000, 60000];
-
-    const openURI = (uri: string) => {
-      if (is.osx()) {
-        const process = spawn('open', [uri], { detached: true, stdio: 'ignore' });
-        process.unref();
-        return;
-      }
-
-      if (is.win()) {
-        const process = spawn('cmd', ['/c', 'start', '', uri], { detached: true, stdio: 'ignore' });
-        process.unref();
-        return;
-      }
-
-      const process = spawn('xdg-open', [uri], { detached: true, stdio: 'ignore' });
-      process.unref();
-    };
-
-    handoffDelayMsList.forEach((handoffDelayMs) => {
-      setTimeout(() => {
-        if (!this.clientLaunchedViaSteam && gameClientProcess?.exitCode !== null) {
-          this.log.warn('Skipping delayed steam://connect because client process has already exited.');
-          return;
-        }
-
-        try {
-          this.log.debug(
-            'Steam connect handoff after %ss: opening %s',
-            handoffDelayMs / 1000,
-            connectURI,
-          );
-          openURI(connectURI);
-        } catch (error) {
-          this.log.warn('Delayed steam://connect attempt failed: %s', error);
-        }
-      }, handoffDelayMs);
-    });
-  }
-
   /**
    * Launches the CSGO game client.
    *
@@ -1317,6 +1269,8 @@ End\n
     const defaultArgs = [
       '-insecure',
       '-novid',
+      '+connect',
+      CSGO_CONNECT_ADDRESS,
     ];
 
     const launchArgs = [...defaultArgs, ...this.userArgs];
@@ -1628,6 +1582,7 @@ SteamAppId ${appId}
     ];
     const appIdTargets = [
       path.join(this.getDedicatedServerRoot(), 'steam_appid.txt'),
+      path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, 'steam_appid.txt'),
     ];
     const gameInfoTargets = [
       path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, 'gameinfo.txt'),
@@ -1732,13 +1687,8 @@ SteamAppId ${appId}
 
     const logFile = await this.waitForLogFile(logRoot, logWaitMarkerTime);
 
-    // 5) now launch the client (after server log is ready)
+    // 5) Launch the client with the server address in the startup args.
     await this.launchClientCSGO();
-
-    // 5b) Perform one delayed steam://connect handoff after client launch.
-    // We intentionally avoid startup +connect to prevent overlapping connect
-    // attempts while loading, which can destabilize some client installs.
-    this.scheduleSteamConnectCSGOOnce();
 
     // 6) Attach client process handlers
     if (gameClientProcess) {
