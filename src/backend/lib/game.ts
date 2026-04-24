@@ -93,9 +93,9 @@ export async function discoverGamePath(enumId: string, steamPath?: string) {
     steamPath = await discoverSteamPath();
   }
 
-  // CS:GO Legacy can live next to the public CS2 app (730) even when the
-  // legacy app id is not present in libraryfolders.vdf.
-  const ids = uniq([Constants.GameSettings.CSGO_APPID, 4465480].map(String));
+  // Prefer the standalone CS:GO app, but keep CS2's library as a fallback
+  // for older installs that still keep the legacy executable in the same library.
+  const ids = uniq([Constants.GameSettings.CSGO_APPID, 730].map(String));
 
   // the libraries manifest file contains a dictionary
   // containing installed game enums
@@ -1609,6 +1609,19 @@ End\n
       : `${sourceContent.trimEnd()}
 appID=${appId}
 `;
+    const normalizeGameInfo = (content: string) => {
+      if (/^(\s*SteamAppId\s+)\d+/mi.test(content)) {
+        return content.replace(/^(\s*SteamAppId\s+)\d+/mi, `$1${appId}`);
+      }
+
+      if (/^(\s*"SteamAppId"\s*")\d+(".*)$/mi.test(content)) {
+        return content.replace(/^(\s*"SteamAppId"\s*")\d+(".*)$/mi, `$1${appId}$2`);
+      }
+
+      return `${content.trimEnd()}
+SteamAppId ${appId}
+`;
+    };
 
     const targets = [
       path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, steamInfName),
@@ -1616,25 +1629,19 @@ appID=${appId}
     const appIdTargets = [
       path.join(this.getDedicatedServerRoot(), 'steam_appid.txt'),
     ];
+    const gameInfoTargets = [
+      path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, 'gameinfo.txt'),
+    ];
 
     if (this.settings.general.gamePath) {
-      targets.push(
-        path.join(
-          this.settings.general.gamePath,
-          Constants.GameSettings.CSGO_BASEDIR,
-          Constants.GameSettings.CSGO_GAMEDIR,
-          steamInfName,
-        ),
-      );
-      appIdTargets.push(
-        path.join(
-          this.settings.general.gamePath,
-          Constants.GameSettings.CSGO_BASEDIR,
-          'steam_appid.txt',
-        ),
-      );
+      const clientRoot = path.join(this.settings.general.gamePath, Constants.GameSettings.CSGO_BASEDIR);
+      const clientGameDir = path.join(clientRoot, Constants.GameSettings.CSGO_GAMEDIR);
+
+      targets.push(path.join(clientGameDir, steamInfName));
+      appIdTargets.push(path.join(clientRoot, 'steam_appid.txt'));
+      gameInfoTargets.push(path.join(clientGameDir, 'gameinfo.txt'));
     } else {
-      this.log.warn('No gamePath set; skipping client steam.inf copy.');
+      this.log.warn('No gamePath set; skipping client CS:GO App ID normalization.');
     }
 
     for (const target of targets) {
@@ -1648,6 +1655,16 @@ appID=${appId}
       await fs.promises.writeFile(target, `${appId}
 `, 'utf8');
       this.log.info(`Wrote steam_appid.txt to: ${target}`);
+    }
+
+    for (const target of gameInfoTargets) {
+      try {
+        const content = await fs.promises.readFile(target, 'utf8');
+        await fs.promises.writeFile(target, normalizeGameInfo(content), 'utf8');
+        this.log.info(`Normalized SteamAppId in: ${target}`);
+      } catch (error) {
+        this.log.warn(`Skipping gameinfo.txt App ID normalization for ${target}: ${error}`);
+      }
     }
   }
 
