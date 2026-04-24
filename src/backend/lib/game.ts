@@ -1663,13 +1663,11 @@ SteamAppId ${gameAppId}
   }
 
   /**
-   * Starts the game client.
-   *
-   *
+   * Launches the game server/client and returns match lifecycle hooks.
    *
    * @function
    */
-  public async start(): Promise<void> {
+  public async launch(): Promise<{ matchFinished: Promise<void> }> {
     const logWaitMarkerTime = new Date();
 
     if (this.settings.general.game === Constants.Game.CSGO && !this.settings.general.dedicatedServerPath) {
@@ -1765,8 +1763,8 @@ SteamAppId ${gameAppId}
       this.scorebotEvents.push({ type: Scorebot.EventIdentifier.ROUND_OVER, payload }),
     );
 
-    // 9) Resolve when GAME_OVER fires
-    return new Promise((resolve) => {
+    // 9) Return a promise that resolves when GAME_OVER fires
+    const matchFinished = new Promise<void>((resolve) => {
       this.scorebot.on(Scorebot.EventIdentifier.GAME_OVER, async (payload) => {
         // In CS:GO we delay + adjust score ordering for OT
         if (true) {
@@ -1797,5 +1795,17 @@ SteamAppId ${gameAppId}
         resolve();
       });
     });
+
+    return { matchFinished };
+  }
+
+  /**
+   * Starts the game client and waits until the match finishes.
+   *
+   * @function
+   */
+  public async start(): Promise<void> {
+    const { matchFinished } = await this.launch();
+    await matchFinished;
   }
 }

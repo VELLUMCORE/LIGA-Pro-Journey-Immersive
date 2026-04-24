@@ -984,7 +984,7 @@ export default function registerFaceitHandlers() {
       match.games[0].map = selectedMap;
 
       const game = new Game(profile, match, null, false);
-      await game.start();
+      const { matchFinished } = await game.launch();
 
       const sides = game.getFaceitSides();
       await prisma.match.update({
@@ -997,13 +997,17 @@ export default function registerFaceitHandlers() {
         },
       });
 
-      await saveFaceitResult(game, realMatchId, profile);
+      void matchFinished
+        .then(async () => {
+          await saveFaceitResult(game, realMatchId, profile);
 
-      if (profile.teamId == null) {
-        await Worldgen.sendUserFaceitOffer();
-      }
-
-      const dailyAfter = await getFaceitDailyState(prisma, profile);
+          if (profile.teamId == null) {
+            await Worldgen.sendUserFaceitOffer();
+          }
+        })
+        .catch((error: unknown) => {
+          log.error(`Failed to finish FACEIT match ${realMatchId}`, error);
+        });
 
 
       return { ok: true, matchId: realMatchId };
