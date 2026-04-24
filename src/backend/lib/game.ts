@@ -1394,7 +1394,7 @@ End\n
 
     const content = [
       'echo "LIGA auto-connect pending"',
-      Array.from({ length: 600 }, () => 'wait').join(';'),
+      Array.from({ length: 480 }, () => 'wait').join(';'),
       `connect ${CSGO_CONNECT_ADDRESS}`,
       `echo "LIGA auto-connect sent: ${CSGO_CONNECT_ADDRESS}"`,
       '',
@@ -1408,38 +1408,6 @@ End\n
       this.log.warn(`Unable to write CS:GO client auto-connect cfg: ${error}`);
     }
   }
-
-  private async connectClientCSGO(delayMs?: number) {
-    const connectUrl = `steam://connect/${CSGO_CONNECT_ADDRESS}`;
-
-    try {
-      await shell.openExternal(connectUrl);
-      this.log.info(
-        'Requested CS:GO client connect via Steam URI%s: %s',
-        typeof delayMs === 'number' ? ` after ${delayMs / 1000}s` : '',
-        connectUrl,
-      );
-    } catch (error) {
-      this.log.warn(`Unable to request CS:GO client connect via Steam URI: ${error}`);
-    }
-  }
-
-  private scheduleClientConnectCSGO(isConnected: () => boolean) {
-    [10000, 18000, 26000].forEach((delayMs) => {
-      const timer = setTimeout(() => {
-        if (isConnected()) {
-          this.log.info('Skipping CS:GO connect handoff because the user already entered the server.');
-          return;
-        }
-
-        void this.connectClientCSGO(delayMs);
-      }, delayMs);
-
-      timer.unref?.();
-    });
-  }
-
-
 
   /**
    * Waits for the server to create a fresh log file newer than the
@@ -1828,17 +1796,6 @@ SteamAppId ${gameAppId}
     this.scorebot.on(Scorebot.EventIdentifier.ROUND_OVER, (payload) =>
       this.scorebotEvents.push({ type: Scorebot.EventIdentifier.ROUND_OVER, payload }),
     );
-
-    let userEnteredServer = false;
-    const userPlayerName = (this.profile as any).player?.name;
-
-    this.scorebot.on(Scorebot.EventIdentifier.PLAYER_ENTERED, (playerName) => {
-      if (userPlayerName && playerName === userPlayerName) {
-        userEnteredServer = true;
-      }
-    });
-
-    this.scheduleClientConnectCSGO(() => userEnteredServer);
 
     // 9) Return a promise that resolves when GAME_OVER fires
     const matchFinished = new Promise<void>((resolve) => {
