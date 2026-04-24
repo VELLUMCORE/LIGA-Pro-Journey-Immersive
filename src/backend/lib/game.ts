@@ -1346,21 +1346,7 @@ End\n
         ? path.join(resolvedSteamPath, Constants.GameSettings.STEAM_EXE)
         : null;
 
-      if (steamExecutable) {
-        try {
-          await fs.promises.access(steamExecutable, fs.constants.F_OK);
-          this.clientLaunchedViaSteam = true;
-          gameClientProcess = spawn(steamExecutable, [
-            '-applaunch',
-            Constants.GameSettings.CSGO_APPID.toString(),
-            ...launchArgs,
-          ]);
-        } catch (_) {
-          this.log.warn(`Steam executable not found at: ${steamExecutable}`);
-        }
-      }
-
-      if (!gameClientProcess && gameInstallPath) {
+      if (gameInstallPath) {
         const gameExecutable = path.join(gameInstallPath, Constants.GameSettings.CSGO_EXE);
 
         try {
@@ -1372,6 +1358,20 @@ End\n
           );
         } catch (_) {
           this.log.warn(`CS:GO executable not found at: ${gameExecutable}`);
+        }
+      }
+
+      if (!gameClientProcess && steamExecutable) {
+        try {
+          await fs.promises.access(steamExecutable, fs.constants.F_OK);
+          this.clientLaunchedViaSteam = true;
+          gameClientProcess = spawn(steamExecutable, [
+            '-applaunch',
+            Constants.GameSettings.CSGO_APPID.toString(),
+            ...launchArgs,
+          ]);
+        } catch (_) {
+          this.log.warn(`Steam executable not found at: ${steamExecutable}`);
         }
       }
 
