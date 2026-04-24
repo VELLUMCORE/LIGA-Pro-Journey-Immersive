@@ -15,7 +15,7 @@ import fs from 'node:fs';
 import util from 'node:util';
 import log from 'electron-log';
 import { spawn, ChildProcessWithoutNullStreams, exec as execSync } from 'node:child_process';
-import { app } from 'electron';
+import { app, shell } from 'electron';
 import { glob } from 'glob';
 import { Prisma, Profile } from '@prisma/client';
 import { compact, flatten, random, startCase, uniq } from 'lodash';
@@ -1373,6 +1373,17 @@ End\n
     return Promise.resolve();
   }
 
+  private async connectClientCSGO() {
+    const connectUrl = `steam://connect/${CSGO_CONNECT_ADDRESS}`;
+
+    try {
+      await shell.openExternal(connectUrl);
+      this.log.info(`Requested CS:GO client connect via Steam URI: ${connectUrl}`);
+    } catch (error) {
+      this.log.warn(`Unable to request CS:GO client connect via Steam URI: ${error}`);
+    }
+  }
+
 
 
   /**
@@ -1726,6 +1737,7 @@ SteamAppId ${gameAppId}
 
     // 5) Launch the client with the server address in the startup args.
     await this.launchClientCSGO();
+    await this.connectClientCSGO();
 
     // 6) Attach client process handlers
     if (gameClientProcess) {
