@@ -11,23 +11,23 @@ import { Bot, Eagers, Constants, Util, is } from "@liga/shared";
 
 const WORLD_CIRCUIT_START_OFFSETS: Record<string, number> = {
   'blast-bounty:spring': 21,
-  'iem:event-1': 38,
-  'iem:event-2': 55,
+  'iem:event-1': 27,
+  'iem:event-2': 102,
   [Constants.TierSlug.LEAGUE_PRO]: 72,
   [Constants.TierSlug.LEAGUE_PRO_PLAYOFFS]: 93,
   'blast-open:spring': 107,
   'blast-rivals:spring': 124,
   'pgl-bucharest': 138,
-  'iem:event-3': 155,
+  'iem:event-3': 130,
   'esports-world-cup': 172,
   'esl-pro-league:season-23': 192,
   'starladder-starseries': 209,
   'blast-bounty:fall': 226,
-  'iem:event-4': 243,
+  'iem:event-4': 152,
   'blast-open:fall': 260,
   'blast-rivals:fall': 277,
   'thunderpick-world-championship': 291,
-  'iem:event-5': 308,
+  'iem:event-5': 305,
   'cs-asia-championship': 325,
 };
 

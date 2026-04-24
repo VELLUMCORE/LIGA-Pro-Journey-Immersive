@@ -34,15 +34,15 @@ WHERE "slug" = 'iem-katowice'
 UPDATE "Tier"
 SET
   "name" = 'IEM Rio 2026',
-  "slug" = 'iem:event-4',
+  "slug" = 'iem:event-2',
   "size" = 14,
   "groupSize" = NULL,
-  "triggerTierSlug" = 'blast-open:fall',
+  "triggerTierSlug" = 'league:pro',
   "triggerOffsetDays" = 10,
   "lan" = true,
   "leagueId" = (SELECT "id" FROM "League" WHERE "slug" = 'espl')
 WHERE "slug" = 'iem-rio'
-  AND NOT EXISTS (SELECT 1 FROM "Tier" WHERE "slug" = 'iem:event-4');
+  AND NOT EXISTS (SELECT 1 FROM "Tier" WHERE "slug" = 'iem:event-2');
 
 INSERT INTO "Tier" (
   "name",
@@ -56,11 +56,12 @@ INSERT INTO "Tier" (
 )
 VALUES
   ('IEM Krakow 2026', 'iem:event-1', 14, NULL, 'iem:event-2', 10, true, (SELECT "id" FROM "League" WHERE "slug" = 'espl')),
-  ('IEM Dallas 2026', 'iem:event-2', 14, NULL, 'league:pro', 10, true, (SELECT "id" FROM "League" WHERE "slug" = 'espl')),
-  ('IEM Cologne 2026', 'iem:event-3', 14, NULL, 'esports-world-cup', 10, true, (SELECT "id" FROM "League" WHERE "slug" = 'espl')),
-  ('IEM Rio 2026', 'iem:event-4', 14, NULL, 'blast-open:fall', 10, true, (SELECT "id" FROM "League" WHERE "slug" = 'espl')),
-  ('IEM Chengdu 2026', 'iem:event-5', 14, NULL, 'cs-asia-championship', 10, true, (SELECT "id" FROM "League" WHERE "slug" = 'espl'))
+  ('IEM Rio 2026', 'iem:event-2', 14, NULL, 'league:pro', 10, true, (SELECT "id" FROM "League" WHERE "slug" = 'espl')),
+  ('IEM Atlanta 2026', 'iem:event-3', 14, NULL, 'esports-world-cup', 10, true, (SELECT "id" FROM "League" WHERE "slug" = 'espl')),
+  ('IEM Cologne 2026', 'iem:event-4', 14, NULL, 'blast-open:fall', 10, true, (SELECT "id" FROM "League" WHERE "slug" = 'espl')),
+  ('IEM China 2026', 'iem:event-5', 14, NULL, 'cs-asia-championship', 10, true, (SELECT "id" FROM "League" WHERE "slug" = 'espl'))
 ON CONFLICT("slug") DO UPDATE SET
+  "name" = excluded."name",
   "size" = excluded."size",
   "groupSize" = excluded."groupSize",
   "triggerTierSlug" = excluded."triggerTierSlug",

@@ -27,23 +27,14 @@ const InvitationalTierSlug = {
 } as const;
 
 const IEM_VENUES = [
-  'Katowice',
   'Krakow',
-  'Dallas',
-  'Cologne',
   'Rio',
-  'Chengdu',
-  'Sydney',
-  'Melbourne',
-  'Shanghai',
-  'Oakland',
-  'Beijing',
+  'Atlanta',
+  'Cologne',
+  'China',
 ] as const;
-const IEM_YEAR = new Date().getFullYear();
-const IEM_EVENT_NAMES = [...IEM_VENUES]
-  .sort(() => Math.random() - 0.5)
-  .slice(0, 5)
-  .map((venue) => `IEM ${venue} ${IEM_YEAR}`);
+const IEM_YEAR = 2026;
+const IEM_EVENT_NAMES = IEM_VENUES.map((venue) => `IEM ${venue} ${IEM_YEAR}`);
 
 /** @type {LeagueSeedData} */
 type LeagueSeedData = Prisma.LeagueCreateInput & {
