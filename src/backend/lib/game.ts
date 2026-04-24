@@ -1461,10 +1461,7 @@ End\n
     const srcdsCommand = `"${serverExe}" ${args.join(' ')}`;
 
     const serverDrive = path.parse(serverRoot).root.replace(/[\\/]+$/, '');
-    const cmdString = `${serverDrive} && cd /d "${path.join(
-      serverRoot,
-      'csgo',
-    )}" && ${srcdsCommand}`;
+    const cmdString = `${serverDrive} && cd /d "${serverRoot}" && ${srcdsCommand}`;
 
     spawn(
       'cmd.exe',
@@ -1556,34 +1553,36 @@ End\n
       return;
     }
 
-    const appId = String(Constants.GameSettings.CSGO_APPID);
+    const gameAppId = String(Constants.GameSettings.CSGO_APPID);
+    const dedicatedServerAppId = String(Constants.GameSettings.CSGO_DS_APPID);
     const sourceContent = await fs.promises.readFile(source, 'utf8');
     const steamInfContent = /^appID=/m.test(sourceContent)
-      ? sourceContent.replace(/^appID=.*$/m, `appID=${appId}`)
+      ? sourceContent.replace(/^appID=.*$/m, `appID=${gameAppId}`)
       : `${sourceContent.trimEnd()}
-appID=${appId}
+appID=${gameAppId}
 `;
     const normalizeGameInfo = (content: string) => {
       if (/^(\s*SteamAppId\s+)\d+/mi.test(content)) {
-        return content.replace(/^(\s*SteamAppId\s+)\d+/mi, `$1${appId}`);
+        return content.replace(/^(\s*SteamAppId\s+)\d+/mi, `$1${gameAppId}`);
       }
 
       if (/^(\s*"SteamAppId"\s*")\d+(".*)$/mi.test(content)) {
-        return content.replace(/^(\s*"SteamAppId"\s*")\d+(".*)$/mi, `$1${appId}$2`);
+        return content.replace(/^(\s*"SteamAppId"\s*")\d+(".*)$/mi, `$1${gameAppId}$2`);
       }
 
       return `${content.trimEnd()}
-SteamAppId ${appId}
+SteamAppId ${gameAppId}
 `;
     };
 
     const targets = [
       path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, steamInfName),
     ];
-    const appIdTargets = [
+    const dedicatedServerAppIdTargets = [
       path.join(this.getDedicatedServerRoot(), 'steam_appid.txt'),
       path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, 'steam_appid.txt'),
     ];
+    const clientAppIdTargets: string[] = [];
     const gameInfoTargets = [
       path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, 'gameinfo.txt'),
     ];
@@ -1593,7 +1592,7 @@ SteamAppId ${appId}
       const clientGameDir = path.join(clientRoot, Constants.GameSettings.CSGO_GAMEDIR);
 
       targets.push(path.join(clientGameDir, steamInfName));
-      appIdTargets.push(path.join(clientRoot, 'steam_appid.txt'));
+      clientAppIdTargets.push(path.join(clientRoot, 'steam_appid.txt'));
       gameInfoTargets.push(path.join(clientGameDir, 'gameinfo.txt'));
     } else {
       this.log.warn('No gamePath set; skipping client CS:GO App ID normalization.');
@@ -1605,11 +1604,18 @@ SteamAppId ${appId}
       this.log.info(`Copied steam.inf to: ${target}`);
     }
 
-    for (const target of appIdTargets) {
+    for (const target of dedicatedServerAppIdTargets) {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
-      await fs.promises.writeFile(target, `${appId}
+      await fs.promises.writeFile(target, `${dedicatedServerAppId}
 `, 'utf8');
-      this.log.info(`Wrote steam_appid.txt to: ${target}`);
+      this.log.info(`Wrote dedicated server steam_appid.txt to: ${target}`);
+    }
+
+    for (const target of clientAppIdTargets) {
+      await fs.promises.mkdir(path.dirname(target), { recursive: true });
+      await fs.promises.writeFile(target, `${gameAppId}
+`, 'utf8');
+      this.log.info(`Wrote client steam_appid.txt to: ${target}`);
     }
 
     for (const target of gameInfoTargets) {
