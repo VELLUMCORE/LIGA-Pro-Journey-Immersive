@@ -95,7 +95,7 @@ export async function discoverGamePath(enumId: string, steamPath?: string) {
 
   // CS:GO Legacy can live next to the public CS2 app (730) even when the
   // legacy app id is not present in libraryfolders.vdf.
-  const ids = uniq([Constants.GameSettings.CSGO_APPID, 730].map(String));
+  const ids = uniq([Constants.GameSettings.CSGO_APPID, 4465480].map(String));
 
   // the libraries manifest file contains a dictionary
   // containing installed game enums
@@ -1602,8 +1602,19 @@ End\n
       return;
     }
 
+    const appId = String(Constants.GameSettings.CSGO_APPID);
+    const sourceContent = await fs.promises.readFile(source, 'utf8');
+    const steamInfContent = /^appID=/m.test(sourceContent)
+      ? sourceContent.replace(/^appID=.*$/m, `appID=${appId}`)
+      : `${sourceContent.trimEnd()}
+appID=${appId}
+`;
+
     const targets = [
       path.join(this.getDedicatedServerRoot(), Constants.GameSettings.CSGO_GAMEDIR, steamInfName),
+    ];
+    const appIdTargets = [
+      path.join(this.getDedicatedServerRoot(), 'steam_appid.txt'),
     ];
 
     if (this.settings.general.gamePath) {
@@ -1615,14 +1626,28 @@ End\n
           steamInfName,
         ),
       );
+      appIdTargets.push(
+        path.join(
+          this.settings.general.gamePath,
+          Constants.GameSettings.CSGO_BASEDIR,
+          'steam_appid.txt',
+        ),
+      );
     } else {
       this.log.warn('No gamePath set; skipping client steam.inf copy.');
     }
 
     for (const target of targets) {
       await fs.promises.mkdir(path.dirname(target), { recursive: true });
-      await fs.promises.copyFile(source, target);
+      await fs.promises.writeFile(target, steamInfContent, 'utf8');
       this.log.info(`Copied steam.inf to: ${target}`);
+    }
+
+    for (const target of appIdTargets) {
+      await fs.promises.mkdir(path.dirname(target), { recursive: true });
+      await fs.promises.writeFile(target, `${appId}
+`, 'utf8');
+      this.log.info(`Wrote steam_appid.txt to: ${target}`);
     }
   }
 
