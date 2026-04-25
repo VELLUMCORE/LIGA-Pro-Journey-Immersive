@@ -11,7 +11,7 @@ import * as Engine from './engine';
 import Tournament from '@liga/shared/tournament';
 import DatabaseClient from './database-client';
 import getLocale from './locale';
-import { addDays, addWeeks, addYears, differenceInDays, format, setDay, subDays } from 'date-fns';
+import { addDays, addWeeks, addYears, differenceInDays, endOfDay, format, setDay, startOfDay, subDays } from 'date-fns';
 import { compact, differenceBy, flatten, groupBy, random, sample, shuffle } from 'lodash';
 import { Calendar, Prisma } from '@prisma/client';
 import { Constants, Chance, Bot, Eagers, Util, UserOfferSettings, TierSlug, UserRole } from '@liga/shared';
@@ -3189,15 +3189,25 @@ function isExtensionOffer(params: {
  *
  * @function
  */
-export async function recordMatchResults() {
+export async function recordMatchResults(options: { throughDate?: Date } = {}) {
   // get today's match results
   const profile = await DatabaseClient.prisma.profile.findFirst();
   const today = profile?.date || new Date();
+  const dateFilter = options.throughDate
+    ? { lte: options.throughDate.toISOString() }
+    : {
+        gte: startOfDay(today).toISOString(),
+        lte: endOfDay(today).toISOString(),
+      };
   const allMatches = await DatabaseClient.prisma.match.findMany({
     where: {
-      date: today.toISOString(),
+      date: dateFilter,
       matchType: { not: "FACEIT_PUG" },
       status: Constants.MatchStatus.COMPLETED,
+      competition: {
+        status: { not: Constants.CompetitionStatus.COMPLETED },
+        tournament: { not: null },
+      },
     },
     include: {
       competitors: true,
@@ -3216,20 +3226,21 @@ export async function recordMatchResults() {
   const competitionIds = Object.keys(groupedMatches);
 
   // record results for all competitions
-  return Promise.all(
+  const updates = await Promise.all(
     competitionIds.map(async (competitionId) => {
       // restore tournament object
       const matches = groupedMatches[competitionId];
       const competition = matches[0].competition;
       const tournamentData = JSON.parse(competition.tournament);
       const tournament = Tournament.restore(tournamentData as ReturnType<Tournament['save']>);
+      let recordedAny = false;
 
       // record match results with tourney
       matches.forEach((match) => {
         const cluxMatch = tournament.$base.findMatch(JSON.parse(match.payload));
 
         // skip if this match is a BYE
-        if (cluxMatch.p.includes(-1)) {
+        if (!cluxMatch || cluxMatch.p.includes(-1) || cluxMatch.m) {
           return;
         }
 
@@ -3239,9 +3250,19 @@ export async function recordMatchResults() {
         const homeScore = match.competitors.find((competitor) => home === competitor.seed);
         const awayScore = match.competitors.find((competitor) => away === competitor.seed);
 
+        if (!homeScore || !awayScore) {
+          return;
+        }
+
         // record the score
-        tournament.$base.score(cluxMatch.id, [homeScore.score, awayScore.score]);
+        if (tournament.$base.score(cluxMatch.id, [homeScore.score, awayScore.score])) {
+          recordedAny = true;
+        }
       });
+
+      if (!recordedAny) {
+        return null;
+      }
 
       // check if a new cup round must be generated
       //
@@ -3404,6 +3425,8 @@ export async function recordMatchResults() {
       });
     }),
   );
+
+  return compact(updates);
 }
 
 /**

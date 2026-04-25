@@ -385,6 +385,11 @@ export async function syncRealtimeWorld(): Promise<any | null> {
     });
 
     if (!dueEntries.length) {
+      const updatedCompetitions = await Worldgen.recordMatchResults({ throughDate: now });
+      if (updatedCompetitions.length) {
+        continue;
+      }
+
       break;
     }
 
@@ -446,6 +451,8 @@ export async function syncRealtimeWorld(): Promise<any | null> {
     if (!processedAny) {
       break;
     }
+
+    await Worldgen.recordMatchResults({ throughDate: now });
   }
 
   return DatabaseClient.prisma.profile.update({
