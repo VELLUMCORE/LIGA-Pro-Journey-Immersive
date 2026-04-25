@@ -19,6 +19,7 @@ import { computeLifetimeStats } from "./faceitstats";
 import * as LeagueStats from "./leaguestats";
 import * as XpEconomy from "@liga/backend/lib/xp-economy";
 import { getNextSeasonAnchorDate, getSeasonAnchorDate, withCompetitionStartTime, withMatchKickoff } from './immersive-career';
+import { getWorldCircuitSchedule } from './world-circuit-schedule';
 
 /**
  * Bumps the current season number by one.
@@ -232,6 +233,39 @@ export async function createCompetitions() {
             tier: true,
           },
         });
+
+        const worldCircuitSchedule = getWorldCircuitSchedule(
+          tier.slug,
+          tier.league.slug,
+          federation.slug,
+        );
+
+        if (worldCircuitSchedule) {
+          const payload = competition.id.toString();
+          await DatabaseClient.prisma.calendar.create({
+            data: {
+              date: withCompetitionStartTime(
+                addDays(today, worldCircuitSchedule.startOffsetDays),
+              ).toISOString(),
+              type: Constants.CalendarEntry.COMPETITION_START,
+              payload,
+            },
+          });
+
+          if (typeof worldCircuitSchedule.endOffsetDays === 'number') {
+            await DatabaseClient.prisma.calendar.create({
+              data: {
+                date: withCompetitionStartTime(
+                  addDays(today, worldCircuitSchedule.endOffsetDays),
+                ).toISOString(),
+                type: Constants.CalendarEntry.COMPETITION_END,
+                payload,
+              },
+            });
+          }
+
+          return Promise.resolve();
+        }
 
         // bail early if this competition relies on
         // a trigger to schedule its start date
@@ -3281,10 +3315,6 @@ export async function recordMatchResults() {
           ) => {
             const existingEntry = await DatabaseClient.prisma.calendar.findFirst({
               where: {
-                date: {
-                  gte: today.toISOString(),
-                  lte: scheduledDate.toISOString(),
-                },
                 type: Constants.CalendarEntry.COMPETITION_START,
                 payload: targetCompetition.id.toString(),
               },
@@ -5706,13 +5736,27 @@ export async function onCompetitionStart(entry: Calendar) {
     },
   });
 
-  await DatabaseClient.prisma.calendar.create({
-    data: {
-      date: lastMatchDay.date,
+  const existingEndEntry = await DatabaseClient.prisma.calendar.findFirst({
+    where: {
       type: Constants.CalendarEntry.COMPETITION_END,
       payload: competition.id.toString(),
     },
   });
+
+  if (existingEndEntry) {
+    await DatabaseClient.prisma.calendar.update({
+      where: { id: existingEndEntry.id },
+      data: { date: lastMatchDay.date },
+    });
+  } else {
+    await DatabaseClient.prisma.calendar.create({
+      data: {
+        date: lastMatchDay.date,
+        type: Constants.CalendarEntry.COMPETITION_END,
+        payload: competition.id.toString(),
+      },
+    });
+  }
 
   // update the competition database record
   return DatabaseClient.prisma.competition.update({

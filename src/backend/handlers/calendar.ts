@@ -7,29 +7,8 @@ import { add, addDays, differenceInDays, endOfDay, format, getISODay, startOfDay
 import { Prisma, Calendar } from "@prisma/client";
 import { DatabaseClient, Engine, WindowManager, Worldgen } from "@liga/backend/lib";
 import { syncRealtimeWorld, withCompetitionStartTime } from '@liga/backend/lib/immersive-career';
+import { getWorldCircuitSchedule } from '@liga/backend/lib/world-circuit-schedule';
 import { Bot, Eagers, Constants, Util, is } from "@liga/shared";
-
-const WORLD_CIRCUIT_START_OFFSETS: Record<string, number> = {
-  'blast-bounty:spring': 21,
-  'iem:event-1': 27,
-  'iem:event-2': 102,
-  [Constants.TierSlug.LEAGUE_PRO]: 72,
-  [Constants.TierSlug.LEAGUE_PRO_PLAYOFFS]: 93,
-  'blast-open:spring': 107,
-  'blast-rivals:spring': 124,
-  'pgl-bucharest': 138,
-  'iem:event-3': 130,
-  'esports-world-cup': 172,
-  'esl-pro-league:season-23': 192,
-  'starladder-starseries': 209,
-  'blast-bounty:fall': 226,
-  'iem:event-4': 152,
-  'blast-open:fall': 260,
-  'blast-rivals:fall': 277,
-  'thunderpick-world-championship': 291,
-  'iem:event-5': 305,
-  'cs-asia-championship': 325,
-};
 
 /**
  * Prevents the main window from closing immediately while the calendar advances.
@@ -116,6 +95,110 @@ async function ensureCompetitionStartEntry(
   });
 }
 
+async function ensureCompetitionDateEntry(
+  type: Constants.CalendarEntry,
+  payload: string,
+  date: Date,
+) {
+  const existing = await DatabaseClient.prisma.calendar.findFirst({
+    where: { type, payload },
+    select: { id: true, date: true },
+  });
+
+  if (existing) {
+    if (existing.date.getTime() !== date.getTime()) {
+      await DatabaseClient.prisma.calendar.update({
+        where: { id: existing.id },
+        data: { date: date.toISOString() },
+      });
+    }
+
+    return;
+  }
+
+  await DatabaseClient.prisma.calendar.create({
+    data: {
+      type,
+      date: date.toISOString(),
+      payload,
+    },
+  });
+}
+
+async function ensureWorldCircuitDateEntriesForCompetition(competitionId: number) {
+  const competition = await DatabaseClient.prisma.competition.findFirst({
+    where: { id: competitionId },
+    include: {
+      federation: true,
+      tier: {
+        include: { league: true },
+      },
+    },
+  });
+
+  if (!competition || competition.status !== Constants.CompetitionStatus.SCHEDULED) {
+    return;
+  }
+
+  const schedule = getWorldCircuitSchedule(
+    competition.tier.slug,
+    competition.tier.league.slug,
+    competition.federation.slug,
+  );
+
+  if (!schedule) {
+    return;
+  }
+
+  const profile = await DatabaseClient.prisma.profile.findFirst();
+  if (!profile) {
+    return;
+  }
+
+  const seasonStart = await DatabaseClient.prisma.calendar.findFirst({
+    where: {
+      type: Constants.CalendarEntry.SEASON_START,
+      date: { lte: profile.date.toISOString() },
+    },
+    orderBy: { date: 'desc' },
+  });
+
+  if (!seasonStart) {
+    return;
+  }
+
+  const payload = String(competition.id);
+  await ensureCompetitionDateEntry(
+    Constants.CalendarEntry.COMPETITION_START,
+    payload,
+    withCompetitionStartTime(addDays(seasonStart.date, schedule.startOffsetDays)),
+  );
+
+  if (typeof schedule.endOffsetDays === 'number') {
+    await ensureCompetitionDateEntry(
+      Constants.CalendarEntry.COMPETITION_END,
+      payload,
+      withCompetitionStartTime(addDays(seasonStart.date, schedule.endOffsetDays)),
+    );
+  }
+}
+
+async function ensureWorldCircuitDateEntriesForCalendarQuery(query: Prisma.CalendarFindFirstArgs) {
+  const type = query?.where?.type;
+  const payload = query?.where?.payload;
+
+  if (
+    (type === Constants.CalendarEntry.COMPETITION_START ||
+      type === Constants.CalendarEntry.COMPETITION_END) &&
+    typeof payload === 'string'
+  ) {
+    const competitionId = Number(payload);
+    if (Number.isFinite(competitionId)) {
+      await ensureWorldCircuitDateEntriesForCompetition(competitionId);
+    }
+  }
+}
+
 /**
  * Recreate missing due competition-start entries.
  *
@@ -151,14 +234,19 @@ async function reconcileDueCompetitionStarts(profile: NonNullable<Awaited<Return
   });
 
   for (const competition of competitions) {
-    const worldCircuitOffset = WORLD_CIRCUIT_START_OFFSETS[competition.tier.slug];
+    const worldCircuitSchedule = getWorldCircuitSchedule(
+      competition.tier.slug,
+      competition.tier.league.slug,
+      competition.federation.slug,
+    );
 
     if (
-      competition.tier.league.slug === Constants.LeagueSlug.ESPORTS_PRO_LEAGUE &&
-      competition.federation.slug === Constants.FederationSlug.ESPORTS_WORLD &&
-      typeof worldCircuitOffset === 'number'
+      worldCircuitSchedule &&
+      typeof worldCircuitSchedule.startOffsetDays === 'number'
     ) {
-      const scheduledDate = withCompetitionStartTime(addDays(seasonStart.date, worldCircuitOffset));
+      const scheduledDate = withCompetitionStartTime(
+        addDays(seasonStart.date, worldCircuitSchedule.startOffsetDays),
+      );
       await ensureCompetitionStartEntry(
         competition,
         profile.date > scheduledDate ? withCompetitionStartTime(profile.date) : scheduledDate,
@@ -456,9 +544,10 @@ export default function () {
   );
 
   // IPC: find calendar entry.
-  ipcMain.handle(Constants.IPCRoute.CALENDAR_FIND, (_, query: Prisma.CalendarFindFirstArgs) =>
-    DatabaseClient.prisma.calendar.findFirst(query)
-  );
+  ipcMain.handle(Constants.IPCRoute.CALENDAR_FIND, async (_, query: Prisma.CalendarFindFirstArgs) => {
+    await ensureWorldCircuitDateEntriesForCalendarQuery(query);
+    return DatabaseClient.prisma.calendar.findFirst(query);
+  });
 
   // IPC: start calendar simulation.
   ipcMain.handle(Constants.IPCRoute.CALENDAR_START, async (_, max?: number) =>
